@@ -6,27 +6,10 @@ Reads Voltage from A0
 Commuincates via simplified JSON-RPC 1.0 (no ids);
 
 Assumes all values are "subscribed" so sends this out every second:
-{
-"method":"subscription",
-"params": {
-"Voltage_Battery": {
-"Value" : <v_batt>,
-"units" : "Volts"},
-"Power_Load" : {
-"value":<power_load>,
-"units":"Watts"},
-"Power_Charge" : {
-"value":<power_charge>,
-"units":"Watts"},
-"Energy_Load" : {
-"value":<power_load>,
-"units":"Watt-hours"},
-"Energy_Charge" : {
-"value":<power_charge>,
-"units":"Watt-hours"}
-}
-}
 
+
+TO DO
+	- Make resistor values setable and store them in EEPROM.
 */
 
 #include <Wire.h>
@@ -47,11 +30,6 @@ Assumes all values are "subscribed" so sends this out every second:
 #define MS_PER_HR 3600000
 #define SUBSCRIPRION_RATE 1	// Rate at which "subscription" message should be repeated in seconds.
 #define LOOP_DELAY_TIME_MS 100	// Time in ms to wait between sampling loops.
-
-
-
-
-
 
 
 // Define Objects

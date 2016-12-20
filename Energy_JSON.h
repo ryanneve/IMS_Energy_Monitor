@@ -5,13 +5,15 @@ class TargetController: public JsonRPCServer {
 public:
 	TargetController(Stream* stream);
 
-	DECLARE_JSON_PROC(TargetController, init, int);
-	DECLARE_JSON_PROC(TargetController, toggleLED, String);
+	DECLARE_JSON_PROC(TargetController, initialize, void);
+	DECLARE_JSON_PROC(TargetController, status,		String);
+	DECLARE_JSON_PROC(TargetController, list_data,	void);
 	
 
 	BEGIN_JSON_REGISTRATION
-		REGISTER_JSON_PROC(init, JSON_RPC_RET_TYPE_NUMERIC);
-		REGISTER_JSON_PROC(toggleLED, JSON_RPC_RET_TYPE_STRING);
+		REGISTER_JSON_PROC(initialize, JSON_RPC_RET_TYPE_NONE);
+		REGISTER_JSON_PROC(status,		JSON_RPC_RET_TYPE_STRING);
+		REGISTER_JSON_PROC(list_data,	JSON_RPC_RET_TYPE_NONE);
 	END_JSON_REGISTRATION
 	
 
