@@ -1,5 +1,8 @@
 
-
+// include the aJSON library
+#include <aJSON.h>
+// include the JsonRPC library
+#include <JsonRPCServer.h>
 
 class TargetController: public JsonRPCServer {
 public:
@@ -23,3 +26,6 @@ private:
 	int _led;
 	
 };
+
+
+void createJSON_subscription(double v_batt, double current, double power, double energy, const char* source_str);
