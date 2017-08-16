@@ -1,17 +1,13 @@
 #include "Energy_JSON.h"
 
 
-extern uint8_t* __brkval;
-extern uint8_t __heap_start;
-
-
 /* Things that can be set:
 	- Energy readings can be reset.
 	- Current readings can be calibrated to 0. May not be necesary.
 	- Vbatt reading can be calibrated to supplied value
 */
 // Filter?
-//char** jsonFilter = { "method","format","height","width",NULL};
+//char** jsonFilter = (char *[]){ "method","params","data","style",NULL};
 //aJsonObject* jsonObject = aJson.parse(json_string,jsonFilter);
 
 
@@ -24,20 +20,57 @@ void TargetController::initialize(aJsonObject* params) {
 }
 
 String TargetController::status(aJsonObject* params) {
-	// return the status of the requested parameter(s)
-	aJsonObject* statusParam = aJson.getObjectItem(params, "status");
-	boolean requestedStatus = statusParam->valuebool;
+	/* return the status of the requested parameter(s)
+	{
+		"method" : "status",
+			"params" : {
+				"data" : ["Voltage", "Load_Current", "Charge_Power"],
+				"style" : "terse"},
+			"id" : 1
+	}
+	*/
+	aJsonObject* dataParam = aJson.getObjectItem(params, "data");
+	aJsonObject* styleParam = aJson.getObjectItem(params, "style");
+	aJsonObject* idParam = aJson.getObjectItem(params, "id");
+	char * requestedData = dataParam->valuestring;
+	char * requestedStyle = styleParam->valuestring;
+	int	requestedId = idParam->valueint;
+	// reusestedData should point to a string like this:
+	// ["depth_m", "spcond_mScm", "sonde_ID"]
 
-	if (requestedStatus)
-	{
-		digitalWrite(_led, HIGH);
-		return "led HIGH";
+	// Figure out how many dataitems.
+	uint8_t n = 0;
+	uint8_t count = 1;
+	for (bool eol = false; eol = true & n < 255; n++ ) {
+		if (requestedData[n] == (const char)",") count++;
+		else if (requestedData[n] = 0) eol = true;
 	}
-	else
+
+	// Is it terse or verbose?
+	// requestedStyle should be either "terse" or "verbose". If absent, assume verbose.
+
+
+	/* Now generate response. Omit sample_time and message_time for now. Units only if verbose.
 	{
-		digitalWrite(_led, LOW);
-		return "led LOW";
+		"result" : {
+			"Voltage" : {
+				"value" : 13.45,
+					"units" : "V",
+					"sample_time" : 20110801135647605},
+			"Load_Current" : {
+				"value" : 1.345,
+					"units" : "A",
+					"sample_time" : 20110801135647605},
+			"Charge_Power" : {
+				"value" : 18.090,
+							"units" : "W",
+							"sample_time" : 20110801023000000},
+			"message_time" : {
+				"value" : 20110801135647605,
+							"units" : "EST"}},
+			"id" : 1
 	}
+	*/
 }
 
 void createJSON_subscription(double v_batt, double current_A, double power_W, double energy_Wh, const char* source_str) {
@@ -70,7 +103,6 @@ void createJSON_subscription(double v_batt, double current_A, double power_W, do
 			aJson.addNumberToObject(Energy, "value", energy_Wh);
 			aJson.addStringToObject(Energy, "units", "Wh");
     char* json_str = aJson.print(root);
-	printFreeRam("IN message: ");
 	aJson.deleteItem(root);
     Serial.println(json_str);
 	free(json_str);
@@ -88,17 +120,11 @@ void TargetController::list_data(aJsonObject* params) {
   // List available data
   Serial.println(" This will be a list of available data");
 }
-
-
-
-int freeRAM() {
-	int v;
-	int mem = ((__brkval == 0) ? (int)&__heap_start : (int)__brkval);
-	return ((int)&v - mem);
+void TargetController::subscribe(aJsonObject* params) {
+	// subscribe to value
+	Serial.println(" This will subscribe to parameters");
 }
-
-void printFreeRam(const char* msg) {
-	Serial.print(msg);
-	Serial.print(" free RAM: ");
-	Serial.println(freeRAM());
+void TargetController::unsubscribe(aJsonObject* params) {
+	// unsubscribe from data
+	Serial.println(" This will unsubscribe from parameters");
 }
