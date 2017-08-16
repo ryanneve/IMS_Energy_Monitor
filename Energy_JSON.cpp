@@ -1,5 +1,10 @@
 #include "Energy_JSON.h"
 
+
+extern uint8_t* __brkval;
+extern uint8_t __heap_start;
+
+
 /* Things that can be set:
 	- Energy readings can be reset.
 	- Current readings can be calibrated to 0. May not be necesary.
@@ -65,12 +70,35 @@ void createJSON_subscription(double v_batt, double current_A, double power_W, do
 			aJson.addNumberToObject(Energy, "value", energy_Wh);
 			aJson.addStringToObject(Energy, "units", "Wh");
     char* json_str = aJson.print(root);
+	printFreeRam("IN message: ");
 	aJson.deleteItem(root);
     Serial.println(json_str);
 	free(json_str);
 }
 
+bool TargetController::set_data(aJsonObject* params) {
+	/* Message will look something like this:
+	{"method":"set","params":{<param>:<value>}}
+
+	So now we have params as an aJson object containing {<param>,<value>}
+	*/
+	//params-->print();
+}
 void TargetController::list_data(aJsonObject* params) {
   // List available data
   Serial.println(" This will be a list of available data");
+}
+
+
+
+int freeRAM() {
+	int v;
+	int mem = ((__brkval == 0) ? (int)&__heap_start : (int)__brkval);
+	return ((int)&v - mem);
+}
+
+void printFreeRam(const char* msg) {
+	Serial.print(msg);
+	Serial.print(" free RAM: ");
+	Serial.println(freeRAM());
 }
