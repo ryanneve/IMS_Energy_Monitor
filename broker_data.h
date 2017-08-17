@@ -13,6 +13,7 @@ public:
 		_subscription_rate = 0;
 		_last_sample_time = NAN;
 		_subscription_time = NAN;
+		_sub_verbose = true;
 		_data_value = NAN;
 		_data_max = NAN;
 		_data_min = NAN;
@@ -30,6 +31,8 @@ public:
 	bool	subscriptionDue();
 	uint8_t		getSubscriptionRate() { return _subscription_rate; }
 	void		setSubscriptionTime() { _subscription_time = millis(); } // Called when subscription is generated.
+	void		setVerbose(bool verbose) { _sub_verbose = verbose; }
+	bool		isVerbose() { return _sub_verbose; }
 	uint32_t	getSampleTime() { return _last_sample_time; }
 	virtual double getData() = 0;
 
@@ -47,6 +50,7 @@ private:
 	uint32_t	_subscription_time;	// Time of last subscription message
 	bool		_data_changed;	// Set to true when data changes and to false when new value is reported in subscription
 	uint32_t	_last_sample_time;	// Time of last sample
+	bool	_sub_verbose;
 };
 
 /*

@@ -10,7 +10,7 @@
 bool BrokerData::subscriptionDue() {
 	// Used to determine if it's time to report a subscription
 	if (_subscription_rate == 0) return false; // Not subscribed
-	if ((millis() - _subscription_time) * 1000 > _subscription_rate) return true;
+	if ((millis() - _subscription_time) / 1000 > _subscription_rate) return true;
 	return false;
 }
 

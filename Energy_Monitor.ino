@@ -76,7 +76,7 @@ PowerData	power_c("Charge_Power",current_c,v_batt);
 EnergyData	energy_l("Load_Energy", power_l);
 EnergyData	energy_c("Charge_Energy",power_c);
 
-BrokerData *brokerdata[BROKERDATA_OBJECTS];
+BrokerData *brokerobjs[BROKERDATA_OBJECTS];
 
 TargetController jsonController(&Serial);
 
@@ -84,6 +84,7 @@ aJsonStream serial_stream(&Serial);
 
 // Global variables
 
+int16_t	json_id = 0;
 
 void setup() {
     Wire.begin();
@@ -105,16 +106,17 @@ void setup() {
 	ads.setGain(ADS1115_PGA_6P144);
 	jsonController.begin(2);
 
-	brokerdata[0] = &v_batt;
-	brokerdata[1] = &v_cc;
-	brokerdata[2] = &current_l;
-	brokerdata[3] = &current_c;
-	brokerdata[4] = &power_l;
-	brokerdata[5] = &power_c;
-	brokerdata[6] = &energy_l;
-	brokerdata[7] = &energy_c;
+	brokerobjs[0] = &v_batt;
+	brokerobjs[1] = &v_cc;
+	brokerobjs[2] = &current_l;
+	brokerobjs[3] = &current_c;
+	brokerobjs[4] = &power_l;
+	brokerobjs[5] = &power_c;
+	brokerobjs[6] = &energy_l;
+	brokerobjs[7] = &energy_c;
 	//BEGIN DEBUG
 	v_batt.subscribe(4);
+	v_cc.subscribe(5);
 	// END DEBUG
 
 }
@@ -157,24 +159,44 @@ void loop()
 	energyc = energy_l.getData();
 
 	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
-		Serial.print(brokerdata[obj_no]->getName());
+		if (brokerobjs[obj_no]->subscriptionDue()) Serial.print("S-");
+		Serial.print(brokerobjs[obj_no]->getName());
 		Serial.print(" = ");
-		Serial.print(brokerdata[obj_no]->getValue());
+		Serial.print(brokerobjs[obj_no]->getValue());
 		Serial.print(" ");
-		Serial.print(brokerdata[obj_no]->getUnit());
+		Serial.print(brokerobjs[obj_no]->getUnit());
 		Serial.println();
 	}
 
 	// Check for subscriptions
-	bool sub_due[BROKERDATA_OBJECTS];
-	uint8_t subs_due = 0;
+	// We have subscriptions to generate based on sub_due array.
+	aJsonObject *json_root, *json_params;
+	aJsonObject *jsondataobjs[BROKERDATA_OBJECTS];
+
+	json_root = aJson.createObject();
+	aJson.addItemToObject(json_root, "method", aJson.createItem("subscription"));
+	aJson.addItemToObject(json_root, "params", json_params = aJson.createObject());
+	uint8_t subscriptions = 0;
 	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
-		sub_due[obj_no] = brokerdata[obj_no]->subscriptionDue();
-		if (sub_due[obj_no]) subs_due++;
+		if (brokerobjs[obj_no]->subscriptionDue()) {
+			aJson.addItemToObject(json_params, brokerobjs[obj_no]->getName(), jsondataobjs[subscriptions] = aJson.createObject());
+			aJson.addNumberToObject(jsondataobjs[subscriptions], "value", brokerobjs[obj_no]->getValue());
+			if (brokerobjs[obj_no]->isVerbose()) {
+				aJson.addStringToObject(jsondataobjs[subscriptions], "units", brokerobjs[obj_no]->getUnit());
+				aJson.addNumberToObject(jsondataobjs[subscriptions], "sample_time", (int)brokerobjs[obj_no]->getSampleTime()); // returns time in millis() since start which is wrong...
+			}
+			brokerobjs[obj_no]->setSubscriptionTime(); // Resets subscription time
+			subscriptions++;
+		}
 	}
-	if (subs_due) {
-		// We have subscriptions to generate based on sub_due array.
+	aJson.addItemToObject(json_root, "message_time", (int)aJson.createItem(millis()));
+	if (subscriptions > 0) {
+		char* json_str = aJson.print(json_root);
+		Serial.println(json_str);
+		free(json_str);
 	}
+	aJson.deleteItem(json_root);
+
 	
 	//if ((uint32_t)(millis() - time_last_message) >= (SUBSCRIPRION_RATE * 1000)) {
 		//printFreeRam("Before message: ");
