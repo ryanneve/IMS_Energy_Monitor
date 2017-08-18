@@ -7,7 +7,7 @@
 */
 class BrokerData {
 public:
-	BrokerData(char *name, char *unit) {
+	BrokerData(char *name, char *unit,bool ro) {
 		strncpy(_data_name, name, BROKER_DATA_NAME_LENGTH);
 		strncpy(_data_unit, unit, BROKER_DATA_UNIT_LENGTH);
 		_subscription_rate = 0;
@@ -17,6 +17,7 @@ public:
 		_data_value = NAN;
 		_data_max = NAN;
 		_data_min = NAN;
+		_ro = ro;
 	};
 	double	getValue() { return _data_value; }
 	double	getMax() { return _data_max; }
@@ -51,14 +52,16 @@ private:
 	bool		_data_changed;	// Set to true when data changes and to false when new value is reported in subscription
 	uint32_t	_last_sample_time;	// Time of last sample
 	bool	_sub_verbose;
+	bool	_ro;	// Read Only?
 };
 
 /*
 class ADCData is an abstract intermediate class for all data objects which get their data from the ADS1115 ADC
+Always Read Only
 */
 class ADCData : public BrokerData {
 public:
-	ADCData(char *name, char *unit, ADS1115 &ads, uint8_t ADCchannel) : BrokerData(name,unit) {
+	ADCData(char *name, char *unit, ADS1115 &ads, uint8_t ADCchannel) : BrokerData(name,unit,true) {
 		_channel = ADCchannel; // should be 0-4
 		_ads = &ads;
 	}
@@ -99,10 +102,11 @@ private:
 
 /*
 class PowerData is a class for all data objects which represent a power object
+Always Read Only
 */
 class PowerData : public BrokerData {
 public:
-	PowerData(char *name, CurrentData &current, VoltageData &voltage) : BrokerData(name,"W") {
+	PowerData(char *name, CurrentData &current, VoltageData &voltage) : BrokerData(name,"W",true) {
 		_voltage = &voltage;
 		_current = &current;
 	}
@@ -118,7 +122,7 @@ class EnergyData is a class for all data objects which represent an energy objec
 */
 class EnergyData : public BrokerData {
 public:
-	EnergyData(char *name, PowerData &power) : BrokerData(name,"Wh") {
+	EnergyData(char *name, PowerData &power) : BrokerData(name,"Wh",false) {
 		_power = &power;
 }
 	double getData(); // Calculates new Energy based on most recent power
