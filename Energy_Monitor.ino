@@ -7,16 +7,17 @@ Channel, function
 2, Battery Voltage (through divider)
 3, Vcc (nominal 5v)
 
-Commuincates via simplified JSON-RPC 1.0 (no ids);
+Commuincates via JSON-RPC
 
 Data Values:
-Voltage_battery
-Current_load
-Current_charge
-Power_load
-Power_charge
-Energy_load
-Energy_charge
+Voltage
+Vcc
+Current_Load
+Current_Charge
+Power_Load
+Power_Charge
+Energy_Load
+Energy_Charge
 Assumes all values are "subscribed" so sends this out periodically:
 
 Accepts the following inputs:
@@ -104,7 +105,8 @@ void setup() {
 	// Set the gain (PGA) +/- 6.144v
 	// Note that any analog input must be higher than �0.3V and less than VDD +0.3
 	ads.setGain(ADS1115_PGA_6P144);
-	jsonController.begin(2);
+	// Initialize JSON controller
+	jsonController.begin(JSON_RPC_PROCEDURES);
 
 	brokerobjs[0] = &v_batt;
 	brokerobjs[1] = &v_cc;
@@ -123,20 +125,16 @@ void setup() {
 
 void loop()
 {
-	// Define variables used for debug messages
-	double vcc; // nominal 5V supply  in V
-	double vbatt;
-	double currentl, currentc;
-	double	powerl,	powerc;
-	double	energyl,energyc;
+	bool data_map[BROKERDATA_OBJECTS]; // Used to mark broker objects we are interested in.
+	uint8_t subscriptions = 0; // How many subscriptions are ready for processing this loop.
 	// Process incoming messages
 	jsonController.process();
 	// CHECK IF WE GOT A RESET MESSAGE
 
-	char _buf[10];
 	//DEBUG START
 	// Get data
 	/*
+	char _buf[10];
 	double adc;
 	adc = v_cc.getADCreading();
 	Serial.print("Channel: "); Serial.print(v_cc.getChannel());
@@ -149,17 +147,22 @@ void loop()
 	//DEBUG END
 	*/
 	// retreive new data
-	vcc = v_cc.getData();
-	vbatt = v_batt.getData();
-	currentl = current_l.getData();
-	currentc = current_c.getData();
-	powerl = power_l.getData();
-	powerc = power_c.getData();
-	energyl = energy_l.getData();
-	energyc = energy_l.getData();
-
+	double vcc = v_cc.getData();
+	double vbatt = v_batt.getData();
+	double currentl = current_l.getData();
+	double currentc = current_c.getData();
+	double powerl = power_l.getData();
+	double powerc = power_c.getData();
+	double energyl = energy_l.getData();
+	double energyc = energy_l.getData();
+	// See what subscriptions are up
 	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
-		if (brokerobjs[obj_no]->subscriptionDue()) Serial.print("S-");
+		if (brokerobjs[obj_no]->subscriptionDue()) {
+			data_map[obj_no] = true;
+			subscriptions++;
+			Serial.print("S-");
+		}
+		else data_map[obj_no] = false;
 		Serial.print(brokerobjs[obj_no]->getName());
 		Serial.print(" = ");
 		Serial.print(brokerobjs[obj_no]->getValue());
@@ -167,54 +170,38 @@ void loop()
 		Serial.print(brokerobjs[obj_no]->getUnit());
 		Serial.println();
 	}
-
 	// Check for subscriptions
 	// We have subscriptions to generate based on sub_due array.
-	aJsonObject *json_root, *json_params;
-	aJsonObject *jsondataobjs[BROKERDATA_OBJECTS];
-
-	json_root = aJson.createObject();
-	aJson.addItemToObject(json_root, "method", aJson.createItem("subscription"));
-	aJson.addItemToObject(json_root, "params", json_params = aJson.createObject());
-	uint8_t subscriptions = 0;
-	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
-		if (brokerobjs[obj_no]->subscriptionDue()) {
-			aJson.addItemToObject(json_params, brokerobjs[obj_no]->getName(), jsondataobjs[subscriptions] = aJson.createObject());
-			aJson.addNumberToObject(jsondataobjs[subscriptions], "value", brokerobjs[obj_no]->getValue());
-			if (brokerobjs[obj_no]->isVerbose()) {
-				aJson.addStringToObject(jsondataobjs[subscriptions], "units", brokerobjs[obj_no]->getUnit());
-				aJson.addNumberToObject(jsondataobjs[subscriptions], "sample_time", (int)brokerobjs[obj_no]->getSampleTime()); // returns time in millis() since start which is wrong...
-			}
-			brokerobjs[obj_no]->setSubscriptionTime(); // Resets subscription time
-			subscriptions++;
-		}
-	}
-	aJson.addItemToObject(json_root, "message_time", (int)aJson.createItem(millis()));
 	if (subscriptions > 0) {
+		// This should be a function .
+		uint8_t sub_idx = 0;
+		aJsonObject *json_root, *json_params;
+		aJsonObject *jsondataobjs[BROKERDATA_OBJECTS]; // Holds objects used for data output
+
+		json_root = aJson.createObject();
+		aJson.addItemToObject(json_root, "method", aJson.createItem("subscription"));
+		aJson.addItemToObject(json_root, "params", json_params = aJson.createObject());
+		// This might also be a function
+		for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
+			if (data_map[obj_no] == true) {
+				aJson.addItemToObject(json_params, brokerobjs[obj_no]->getName(), jsondataobjs[sub_idx] = aJson.createObject());
+				aJson.addNumberToObject(jsondataobjs[sub_idx], "value", brokerobjs[obj_no]->getValue());
+				if (brokerobjs[obj_no]->isVerbose()) {
+					aJson.addStringToObject(jsondataobjs[sub_idx], "units", brokerobjs[obj_no]->getUnit());
+					aJson.addNumberToObject(jsondataobjs[sub_idx], "sample_time", (int)brokerobjs[obj_no]->getSampleTime()); // returns time in millis() since start which is wrong...
+				}
+				brokerobjs[obj_no]->setSubscriptionTime(); // Resets subscription time
+				sub_idx++;
+			}
+		}
+		aJson.addItemToObject(json_root, "message_time", (int)aJson.createItem(millis()));
 		char* json_str = aJson.print(json_root);
+		Serial.print("JSON string:");
 		Serial.println(json_str);
 		free(json_str);
+		aJson.deleteItem(json_root);
 	}
-	aJson.deleteItem(json_root);
-
-	
-	//if ((uint32_t)(millis() - time_last_message) >= (SUBSCRIPRION_RATE * 1000)) {
-		//printFreeRam("Before message: ");
-		//time_last_message = millis();
-		// First Load
-		//Serial.println("Load message");
-		//createJSON_subscription(v_batt, current_load,	power_load,		energy_load,	source_load);
-		//sendJSONRPCsubString();
-		// Now charge
-		//Serial.println("Charge message");
-		//createJSON_subscription(v_batt, current_charge,	power_charge,	energy_charge,	source_charge);
-		//sendJSONRPCsubString();
-		//printFreeRam("After message: ");
-	//}
-	//else {
-		// Not time to report.
-		delay(LOOP_DELAY_TIME_MS); // MAY BE WORTH LOOKING IN TO LOWERING POWER CONSUMPTION HERE
-	//}
+	delay(LOOP_DELAY_TIME_MS); // MAY BE WORTH LOOKING IN TO LOWERING POWER CONSUMPTION HERE
 }
 
 void dataDebug(){
