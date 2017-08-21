@@ -83,11 +83,6 @@ BrokerData *brokerobjs[BROKERDATA_OBJECTS];
 
 aJsonStream serial_stream(&Serial);
 
-aJsonObject *json_response = aJson.createObject();
-//aJsonObject *jsonrpc_method = aJson.createObject();
-//aJsonObject *jsonrpc_id = aJson.createObject();
-aJsonObject *jsonrpc_params = aJson.createObject(); //GLOBAL
-aJsonObject *jsonrpc_style = aJson.createObject();
 
 // Global variables
 
@@ -113,10 +108,9 @@ void setup() {
 	//Serial1.begin(57600);	// PINS
 	while (!Serial);	// Leonardo seems to need this
 	//while (!Serial1);	// Leonardo seems to need this
-	Serial.println("UNC-IMS Energy Monitor");
 	delay(3000);
 	//Serial.println(Setup_ads() ? "ADS1115 connection successful" : "ADS1115 connection failed");
-	Serial.println(ads.testConnection() ? "ADS1115 connection successful" : "ADS1115 connection failed");
+	Serial.println(ads.testConnection() ? F("ADS1115 connected") : F("ADS1115  failed"));
 	ads.initialize();
 	// We're going to do single shot sampling
 	ads.setMode(ADS1115_MODE_SINGLESHOT);
@@ -143,11 +137,10 @@ void setup() {
 
 void loop()
 {
-	uint8_t subscriptions = 0; // How many subscriptions are ready for processing this loop.
+	printFreeRam("loop0");
 	// Process incoming messages
 	processSerial();
 	// CHECK IF WE GOT A RESET MESSAGE
-
 	//DEBUG START
 	// Get data
 	/*
@@ -173,65 +166,91 @@ void loop()
 	double energyl = energy_l.getData();
 	double energyc = energy_l.getData();
 	// See what subscriptions are up
+	if (checkSubscriptions() > 0) processSubscriptions();
+	delay(LOOP_DELAY_TIME_MS); // MAY BE WORTH LOOKING IN TO LOWERING POWER CONSUMPTION HERE
+}
+
+void processSubscriptions() {
+	printFreeRam("pS start");
+	// This should be a function .
+	uint8_t sub_idx = 0;
+	aJsonObject *json_root, *json_params;
+	aJsonObject *jsondataobjs[BROKERDATA_OBJECTS]; // Holds objects used for data output
+
+	json_root = aJson.createObject();
+	aJson.addItemToObject(json_root, "method", aJson.createItem("subscription"));
+	aJson.addItemToObject(json_root, "params", json_params = aJson.createObject());
+	// This might also be a function
 	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
-		if (brokerobjs[obj_no]->subscriptionDue()) {
-			data_map[obj_no] = true;
-			subscriptions++;
-			Serial.print("S-");
+		if (data_map[obj_no] == true) {
+			aJson.addItemToObject(json_params, brokerobjs[obj_no]->getName(), jsondataobjs[sub_idx] = aJson.createObject());
+			aJson.addNumberToObject(jsondataobjs[sub_idx], "value", brokerobjs[obj_no]->getValue());
+			if (brokerobjs[obj_no]->isVerbose()) {
+				aJson.addStringToObject(jsondataobjs[sub_idx], "units", brokerobjs[obj_no]->getUnit());
+				aJson.addNumberToObject(jsondataobjs[sub_idx], "sample_time", (int)brokerobjs[obj_no]->getSampleTime()); // returns time in millis() since start which is wrong...
+			}
+			brokerobjs[obj_no]->setSubscriptionTime(); // Resets subscription time
+			sub_idx++;
 		}
-		else data_map[obj_no] = false;
+	}
+	aJson.addItemToObject(json_root, "message_time", (int)aJson.createItem(millis()));
+	Serial.print(F("JSON string:"));	aJson.print(json_root, &serial_stream);		Serial.println();
+	//for (uint8_t obj_no = 0; obj_no < sub_idx; obj_no++) {
+	//	aJson.deleteItem(jsondataobjs[obj_no]);// Causes hang
+	//}
+	//free(jsondataobjs);
+	aJson.deleteItem(json_root);
+}
+uint8_t checkSubscriptions() {
+	printFreeRam("cS start");
+	uint8_t subs = 0;
+	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
+		if (::brokerobjs[obj_no]->subscriptionDue()) {
+			::data_map[obj_no] = true;
+			subs++;
+			//Serial.print("S-");
+		}
+		else ::data_map[obj_no] = false;
+		/*
 		Serial.print(brokerobjs[obj_no]->getName());
 		Serial.print(" = ");
 		Serial.print(brokerobjs[obj_no]->getValue());
 		Serial.print(" ");
 		Serial.print(brokerobjs[obj_no]->getUnit());
 		Serial.println();
+		*/
 	}
-	// Check for subscriptions
-	// We have subscriptions to generate based on sub_due array.
-	if (subscriptions > 0) {
-		// This should be a function .
-		uint8_t sub_idx = 0;
-		aJsonObject *json_root, *json_params;
-		aJsonObject *jsondataobjs[BROKERDATA_OBJECTS]; // Holds objects used for data output
+	return subs;
+}
 
-		json_root = aJson.createObject();
-		aJson.addItemToObject(json_root, "method", aJson.createItem("subscription"));
-		aJson.addItemToObject(json_root, "params", json_params = aJson.createObject());
-		// This might also be a function
-		for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
-			if (data_map[obj_no] == true) {
-				aJson.addItemToObject(json_params, brokerobjs[obj_no]->getName(), jsondataobjs[sub_idx] = aJson.createObject());
-				aJson.addNumberToObject(jsondataobjs[sub_idx], "value", brokerobjs[obj_no]->getValue());
-				if (brokerobjs[obj_no]->isVerbose()) {
-					aJson.addStringToObject(jsondataobjs[sub_idx], "units", brokerobjs[obj_no]->getUnit());
-					aJson.addNumberToObject(jsondataobjs[sub_idx], "sample_time", (int)brokerobjs[obj_no]->getSampleTime()); // returns time in millis() since start which is wrong...
-				}
-				brokerobjs[obj_no]->setSubscriptionTime(); // Resets subscription time
-				sub_idx++;
-			}
-		}
-		aJson.addItemToObject(json_root, "message_time", (int)aJson.createItem(millis()));
-		Serial.print("JSON string:");	aJson.print(json_root, &serial_stream);		Serial.println();	
-		for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
-			aJson.deleteItem(jsondataobjs[obj_no]);
-		}
-		aJson.deleteItem(json_root);
-	}
-	delay(LOOP_DELAY_TIME_MS); // MAY BE WORTH LOOKING IN TO LOWERING POWER CONSUMPTION HERE
+int freeRam() {
+	extern int __heap_start, *__brkval;
+	int v;
+	return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
 }
 
 
-uint16_t getMessageType(aJsonObject *json_in_msg) {
+void printFreeRam(char * msg) {
+	Serial.print(F("Free RAM ("));
+	Serial.print(msg);
+	Serial.print("):");
+	Serial.println(freeRam());
+
+}
+
+uint16_t getMessageType(aJsonObject** json_in_msg) {
 	// Create response
 	// Check required fields
-	aJsonObject *jsonrpc_method = aJson.getObjectItem(json_in_msg, "method");
-	aJsonObject *jsonrpc_id = aJson.getObjectItem(json_in_msg, "id");
-	jsonrpc_params = aJson.getObjectItem(json_in_msg, "params");
-	Serial.print("Parameters: "); aJson.print(jsonrpc_params, &serial_stream); Serial.println();
+	printFreeRam("gMT start");
+	uint8_t json_method = BROKER_ERROR;
+	aJsonObject *jsonrpc_method = aJson.getObjectItem(*json_in_msg, "method");
+	aJsonObject *jsonrpc_id = aJson.getObjectItem(*json_in_msg, "id");
+	//aJsonObject *jsonrpc_params = aJson.getObjectItem(json_in_msg, "params");
+	//Serial.print(F("Parameters: ")); aJson.print(jsonrpc_params, &serial_stream); Serial.println();
 
 	if (!jsonrpc_method || !jsonrpc_id) {
 		// Not a valid Json-RPC 2.0 message
+		aJsonObject *json_response = aJson.createObject();
 		aJsonObject *error = aJson.createObject();
 		aJson.addItemToObject(error, "code", aJson.createItem(-32600));
 		aJson.addItemToObject(error, "message", aJson.createItem("Invalid Request."));
@@ -252,58 +271,77 @@ uint16_t getMessageType(aJsonObject *json_in_msg) {
 	}
 	
 	char *method_str = aJson.print(jsonrpc_method); // MIGHT BE A BETTER WAY TO DO THIS
-	for (uint8_t json_method = 0; json_method < JSON_REQUEST_COUNT; json_method++) {
-		if (strcmp(method_str, REQUEST_STRINGS[json_method])) {
-			Serial.print("Found a JSON request match: ");
-			Serial.println(REQUEST_STRINGS[json_method]);
-			return json_method;
+	for (uint8_t j_method = 0; j_method < JSON_REQUEST_COUNT; j_method++) {
+		if (strcmp(method_str, REQUEST_STRINGS[j_method])) {
+			Serial.print(F("JSON request: "));
+			Serial.println(REQUEST_STRINGS[j_method]);
+			json_method = j_method;
+			break;
 		}
 	}
-	aJson.deleteItem(jsonrpc_id);
-	aJson.deleteItem(jsonrpc_method);
-	return BROKER_ERROR;
+	free(method_str);
+	//printFreeRam("gMT end1");
+	//aJson.deleteItem(jsonrpc_id);
+	//printFreeRam("gMT end2");
+	//aJson.deleteItem(jsonrpc_method);
+	printFreeRam("gMT end3");
+	return json_method;
 }
 
-uint8_t processBrokerStatus() {
+uint8_t processBrokerStatus(aJsonObject *json_in_msg) {
+	printFreeRam("pBS start");
 	uint8_t status_matches_found = 0;
-	Serial.println("in processBrokerStatus()");
 	// First process style
+	aJsonObject *jsonrpc_params = aJson.getObjectItem(json_in_msg, "params");
+	//aJsonObject *jsonrpc_style = aJson.getObjectItem(aJson.getObjectItem(json_in_msg, "params"), "style");
 	aJsonObject *jsonrpc_style = aJson.getObjectItem(jsonrpc_params, "style");
 	if (!strcmp(jsonrpc_style->valuestring, "terse")) {
 		status_verbose = true;
 	}
 	else status_verbose = false;
 	aJson.deleteItem(jsonrpc_style);
+	printFreeRam("pBS style");
 	// Now data
+	//aJsonObject *jsonrpc_data = aJson.getObjectItem(aJson.getObjectItem(json_in_msg, "params"), "data");
 	aJsonObject *jsonrpc_data = aJson.getObjectItem(jsonrpc_params, "data");
+	Serial.print(F("1 Msg: ")); aJson.print(json_in_msg, &serial_stream); Serial.println();
+	Serial.print(F("Data: ")); aJson.print(jsonrpc_data, &serial_stream); Serial.println();
+	aJson.print(jsonrpc_data, &serial_stream);
+	aJson.deleteItem(jsonrpc_params);
 	aJsonObject *jsonrpc_data_item = jsonrpc_data->child;
+	printFreeRam("pBS data 1");
 	while (jsonrpc_data_item) { 
 		for (uint8_t broker_data_idx = 0; broker_data_idx < BROKERDATA_OBJECTS; broker_data_idx++) {
-			//Serial.print("Comparing "); Serial.print(jsonrpc_data_item->valuestring); Serial.print(" to "); Serial.println(brokerobjs[broker_data_idx]->getName());
+			Serial.print("Comparing "); Serial.print(jsonrpc_data_item->valuestring); Serial.print(" to "); Serial.println(brokerobjs[broker_data_idx]->getName());
 			if (strcmp(jsonrpc_data_item->valuestring, brokerobjs[broker_data_idx]->getName())) {
 				data_map[broker_data_idx] = 0;
 			}
 			else {
 
-				Serial.print("Found broker data match: "); Serial.println(jsonrpc_data_item->valuestring);
+				Serial.print(F("B data: ")); Serial.println(jsonrpc_data_item->valuestring);
 				data_map[broker_data_idx] = 1; 
 				status_matches_found++;
 			}
+			printFreeRam("pBS data 2");
 		}
 		jsonrpc_data_item = jsonrpc_data_item->next;
+		printFreeRam("pBS data 3");
 	}
 	aJson.deleteItem(jsonrpc_data);
+	printFreeRam("pBS got data");
 	// Finally ID
-	aJsonObject *jsonrpc_id = aJson.getObjectItem(jsonrpc_params, "id");
+	aJsonObject *jsonrpc_id = aJson.getObjectItem(aJson.getObjectItem(json_in_msg, "params"), "id");
 	if (jsonrpc_id) json_id = jsonrpc_id->valueint;
 	else json_id = 0;
+	printFreeRam("pBS got id");
 	aJson.deleteItem(jsonrpc_id);
-	aJson.deleteItem(jsonrpc_params); // Should no longer be needed
+	//aJson.deleteItem(::jsonrpc_params); // Should no longer be needed
 	return status_matches_found;
 }
 
-void generateStatusMessage() {
-	// nased on contents of datamap array, generate status message.
+void generateStatusMessage(aJsonObject *json_resp) {
+	printFreeRam("gSM start");
+	// based on contents of datamap array, generate status message.
 	/*
 	{
     "result" : {
@@ -316,15 +354,15 @@ void generateStatusMessage() {
             "units" : "V",
             "sample_time":20110801135647605},
     "id" : 1
-}
-*/
-	Serial.println("1 in generateStatusMessage()");
-	json_response = aJson.createObject();
+	}
+	*/
+	//Serial.println(F("1 in gSM()"));
+	//json_response = aJson.createObject();
 	aJsonObject *json_results;
-	aJson.addItemToObject(json_response, "result", json_results = aJson.createObject());
-	Serial.println("2 in generateStatusMessage()");
+	aJson.addItemToObject(json_resp, "result", json_results = aJson.createObject());
+	//Serial.println(F("2 in gSM()"));
 	aJsonObject *jsondataobjs[BROKERDATA_OBJECTS]; // Holds objects used for data output DOES THIS NEED TO BE DELETED?
-	Serial.println("4 in generateStatusMessage()");
+	//Serial.println(F("4 in gSM()"));
 	uint8_t sub_idx = 0;
 	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
 		Serial.println(obj_no);
@@ -342,15 +380,14 @@ void generateStatusMessage() {
 		}
 	}
 	aJson.addNumberToObject(json_results, "message_time", (unsigned long)aJson.createItem(millis()));
-	aJson.addNumberToObject(json_response, "id", json_id);
-	Serial.print("JSON string:");	aJson.print(json_response, &serial_stream);		Serial.println();
+	aJson.addNumberToObject(json_resp, "id", json_id);
+	Serial.print(F("JSON string:"));	aJson.print(json_resp, &serial_stream);		Serial.println();
 	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
 		aJson.deleteItem(jsondataobjs[obj_no]);
 	}
 	//aJson.deleteItem(json_results);
-	aJson.deleteItem(json_response); // should also delete json_results
-	
-	Serial.println("in generateStatusMessage()");
+	aJson.deleteItem(json_resp); // should also delete json_results
+	Serial.println(F("gSM end"));
 }
 
 void clearDataMap() {
@@ -361,27 +398,38 @@ void clearDataMap() {
 
 // Move this to separate local library at some point.
 bool processSerial() {
+	printFreeRam("pS start");
 	if (serial_stream.available()) {
 		// skip any accidental whitespace like newlines
 		serial_stream.skip();
 	}
 
 	if (serial_stream.available()) {
-		Serial.println("DATA  FOUND!");
-		aJsonObject *msg = aJson.parse(&serial_stream);
+		//Serial.println(F("DATA  FOUND!"));
+		aJsonObject *serial_msg = aJson.parse(&serial_stream);
 
-		if (msg != NULL) {
-			Serial.println("PROCESSING MESSAGE!");
-			uint8_t message_type = getMessageType(msg);
+		if (serial_msg != NULL) {
+			//Serial.println(F("PROCESSING MESSAGE!"));
+			Serial.print(F("AMsg: ")); aJson.print(serial_msg, &serial_stream); Serial.println();
+			uint8_t message_type = getMessageType(&serial_msg);
+
+			//aJsonObject *jsonrpc_params = aJson.getObjectItem(json_in_msg, "params");
+
+			Serial.print(F("BMsg: ")); aJson.print(serial_msg, &serial_stream); Serial.println();
 			switch (message_type) {
-			case (BROKER_STATUS): // Get status of items listed in jsonrpc_params
-				if (processBrokerStatus()) generateStatusMessage();
-				break;
-			case (BROKER_SUBSCRIBE): break;
-			case (BROKER_UNSUBSCRIBE): break;
-			case (BROKER_SET): break;
-			case (BROKER_LIST_DATA): break;
+				case (BROKER_STATUS): // Get status of items listed in jsonrpc_params
+					if (processBrokerStatus(serial_msg)) {
+						aJsonObject *json_response = aJson.createObject();
+						generateStatusMessage(json_response);
+						aJson.deleteItem(json_response);
+					}
+					break;
+				case (BROKER_SUBSCRIBE): break;
+				case (BROKER_UNSUBSCRIBE): break;
+				case (BROKER_SET): break;
+				case (BROKER_LIST_DATA): break;
 			}
+			aJson.deleteItem(serial_msg); // Done with msg.
 		}
 		else {
 			serial_stream.flush();
@@ -396,11 +444,10 @@ bool processSerial() {
 			aJson.deleteItem(error);
 			aJson.deleteItem(response);
 		}
-		aJson.deleteItem(msg);
 		return true;
 	}
 	else {
-		Serial.println("NONE FOUND");
+		Serial.println(F("NO MESSAGES FOUND"));
 		return false;
 	}
 
