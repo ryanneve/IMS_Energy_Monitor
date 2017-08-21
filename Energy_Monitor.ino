@@ -45,9 +45,9 @@ TO DO
 // include the aJSON library
 #include <aJSON.h>
 // include the JsonRPC library
-#include <JsonRPCServer.h>
+//#include <JsonRPCServer.h>
 // this includes all functions relating to specific JSON messahe parsing and generation.
-#include "Energy_JSON.h"
+//#include "Energy_JSON.h"
 // data objects
 #include "broker_data.h"
 
@@ -79,13 +79,33 @@ EnergyData	energy_c("Charge_Energy",power_c);
 
 BrokerData *brokerobjs[BROKERDATA_OBJECTS];
 
-TargetController jsonController(&Serial);
+//TargetController jsonController(&Serial);
 
 aJsonStream serial_stream(&Serial);
+
+aJsonObject *json_response = aJson.createObject();
+//aJsonObject *jsonrpc_method = aJson.createObject();
+//aJsonObject *jsonrpc_id = aJson.createObject();
+aJsonObject *jsonrpc_params = aJson.createObject(); //GLOBAL
+aJsonObject *jsonrpc_style = aJson.createObject();
 
 // Global variables
 
 int16_t	json_id = 0;
+bool status_verbose = true; // true is default.
+bool data_map[BROKERDATA_OBJECTS]; // Used to mark broker objects we are interested in.
+
+
+const uint8_t JSON_REQUEST_COUNT = 6; // How many different request types are there.
+enum json_r_t {
+	BROKER_STATUS = 0,
+	BROKER_SUBSCRIBE = 1,
+	BROKER_UNSUBSCRIBE = 2,
+	BROKER_SET = 3,
+	BROKER_LIST_DATA = 4,
+	BROKER_ERROR = 5
+};
+const char *REQUEST_STRINGS[JSON_REQUEST_COUNT] = { "status","subscribe","unsubscribe","set","list_data","" };
 
 void setup() {
     Wire.begin();
@@ -105,8 +125,6 @@ void setup() {
 	// Set the gain (PGA) +/- 6.144v
 	// Note that any analog input must be higher than �0.3V and less than VDD +0.3
 	ads.setGain(ADS1115_PGA_6P144);
-	// Initialize JSON controller
-	jsonController.begin(JSON_RPC_PROCEDURES);
 
 	brokerobjs[0] = &v_batt;
 	brokerobjs[1] = &v_cc;
@@ -125,10 +143,9 @@ void setup() {
 
 void loop()
 {
-	bool data_map[BROKERDATA_OBJECTS]; // Used to mark broker objects we are interested in.
 	uint8_t subscriptions = 0; // How many subscriptions are ready for processing this loop.
 	// Process incoming messages
-	jsonController.process();
+	processSerial();
 	// CHECK IF WE GOT A RESET MESSAGE
 
 	//DEBUG START
@@ -195,40 +212,196 @@ void loop()
 			}
 		}
 		aJson.addItemToObject(json_root, "message_time", (int)aJson.createItem(millis()));
-		char* json_str = aJson.print(json_root);
-		Serial.print("JSON string:");
-		Serial.println(json_str);
-		free(json_str);
+		Serial.print("JSON string:");	aJson.print(json_root, &serial_stream);		Serial.println();	
+		for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
+			aJson.deleteItem(jsondataobjs[obj_no]);
+		}
 		aJson.deleteItem(json_root);
 	}
 	delay(LOOP_DELAY_TIME_MS); // MAY BE WORTH LOOKING IN TO LOWERING POWER CONSUMPTION HERE
 }
 
-void dataDebug(){
-  // Print out values.
+
+uint16_t getMessageType(aJsonObject *json_in_msg) {
+	// Create response
+	// Check required fields
+	aJsonObject *jsonrpc_method = aJson.getObjectItem(json_in_msg, "method");
+	aJsonObject *jsonrpc_id = aJson.getObjectItem(json_in_msg, "id");
+	jsonrpc_params = aJson.getObjectItem(json_in_msg, "params");
+	Serial.print("Parameters: "); aJson.print(jsonrpc_params, &serial_stream); Serial.println();
+
+	if (!jsonrpc_method || !jsonrpc_id) {
+		// Not a valid Json-RPC 2.0 message
+		aJsonObject *error = aJson.createObject();
+		aJson.addItemToObject(error, "code", aJson.createItem(-32600));
+		aJson.addItemToObject(error, "message", aJson.createItem("Invalid Request."));
+		aJson.addItemToObject(json_response, "error", error);
+
+		if (!jsonrpc_id) {
+			aJson.addItemToObject(json_response, "id", aJson.createNull());
+			aJson.addItemToObject(error, "data", aJson.createItem("Missing id."));
+		}
+		else {
+			aJson.addItemToObject(json_response, "id", jsonrpc_id);
+			aJson.addItemToObject(error, "data", aJson.createItem("Missing method."));
+		}
+
+		aJson.print(json_response, &serial_stream);
+		aJson.deleteItem(json_response);
+		return;
+	}
+	
+	char *method_str = aJson.print(jsonrpc_method); // MIGHT BE A BETTER WAY TO DO THIS
+	for (uint8_t json_method = 0; json_method < JSON_REQUEST_COUNT; json_method++) {
+		if (strcmp(method_str, REQUEST_STRINGS[json_method])) {
+			Serial.print("Found a JSON request match: ");
+			Serial.println(REQUEST_STRINGS[json_method]);
+			return json_method;
+		}
+	}
+	aJson.deleteItem(jsonrpc_id);
+	aJson.deleteItem(jsonrpc_method);
+	return BROKER_ERROR;
 }
 
+uint8_t processBrokerStatus() {
+	uint8_t status_matches_found = 0;
+	Serial.println("in processBrokerStatus()");
+	// First process style
+	aJsonObject *jsonrpc_style = aJson.getObjectItem(jsonrpc_params, "style");
+	if (!strcmp(jsonrpc_style->valuestring, "terse")) {
+		status_verbose = true;
+	}
+	else status_verbose = false;
+	aJson.deleteItem(jsonrpc_style);
+	// Now data
+	aJsonObject *jsonrpc_data = aJson.getObjectItem(jsonrpc_params, "data");
+	aJsonObject *jsonrpc_data_item = jsonrpc_data->child;
+	while (jsonrpc_data_item) { 
+		for (uint8_t broker_data_idx = 0; broker_data_idx < BROKERDATA_OBJECTS; broker_data_idx++) {
+			//Serial.print("Comparing "); Serial.print(jsonrpc_data_item->valuestring); Serial.print(" to "); Serial.println(brokerobjs[broker_data_idx]->getName());
+			if (strcmp(jsonrpc_data_item->valuestring, brokerobjs[broker_data_idx]->getName())) {
+				data_map[broker_data_idx] = 0;
+			}
+			else {
 
-bool readJSONRPCstring() {
-	/* Look for these methods:
-	status - probably pointless due to subscription messages.
-	subscribe - probably pointless due to subscription asumptions.
-	unsubscribe - probably pointless due to subscription asumptions.
-	power - ignored
-	token* - ignored, single interface so no token used.
-	sampling - ignored, always sampling
-	logging - ignored, no database logging done.
-	initialize - ? Could be used to reset.
-	list_data - return list of data available.
-	suspend - ignored at this level
-	resume - ignored at this level.
-	shutdown - ignored?
-	broker_status - report status
-	set - col be used to reset totalizers.
-	*/
+				Serial.print("Found broker data match: "); Serial.println(jsonrpc_data_item->valuestring);
+				data_map[broker_data_idx] = 1; 
+				status_matches_found++;
+			}
+		}
+		jsonrpc_data_item = jsonrpc_data_item->next;
+	}
+	aJson.deleteItem(jsonrpc_data);
+	// Finally ID
+	aJsonObject *jsonrpc_id = aJson.getObjectItem(jsonrpc_params, "id");
+	if (jsonrpc_id) json_id = jsonrpc_id->valueint;
+	else json_id = 0;
+	aJson.deleteItem(jsonrpc_id);
+	aJson.deleteItem(jsonrpc_params); // Should no longer be needed
+	return status_matches_found;
 }
 
-void sendJSONRPCsubString() {
+void generateStatusMessage() {
+	// nased on contents of datamap array, generate status message.
+	/*
+	{
+    "result" : {
+        "Voltage" : {
+            "value" : 13.5,
+            "units" : "V",
+            "sample_time":20110801135647605},
+        "Vcc" : {
+            "value" : 4.85,
+            "units" : "V",
+            "sample_time":20110801135647605},
+    "id" : 1
+}
+*/
+	Serial.println("1 in generateStatusMessage()");
+	json_response = aJson.createObject();
+	aJsonObject *json_results;
+	aJson.addItemToObject(json_response, "result", json_results = aJson.createObject());
+	Serial.println("2 in generateStatusMessage()");
+	aJsonObject *jsondataobjs[BROKERDATA_OBJECTS]; // Holds objects used for data output DOES THIS NEED TO BE DELETED?
+	Serial.println("4 in generateStatusMessage()");
+	uint8_t sub_idx = 0;
+	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
+		Serial.println(obj_no);
+		if (data_map[obj_no] == true) {
+			Serial.print("    Found obj "); Serial.print(brokerobjs[obj_no]->getName());
+			// generate message
+			//aJson.addItemToObject(json_results, brokerobjs[obj_no]->getName(), jsondataobjs[obj_no] = aJson.createObject());
+			//aJson.addNumberToObject(jsondataobjs[sub_idx], "value", brokerobjs[obj_no]->getValue());
+			if (status_verbose) {
+				//aJson.addStringToObject(jsondataobjs[sub_idx], "units", brokerobjs[obj_no]->getUnit());
+				//aJson.addNumberToObject(jsondataobjs[sub_idx], "sample_time", brokerobjs[obj_no]->getSampleTime());
 
+			}
+			sub_idx++;
+		}
+	}
+	aJson.addNumberToObject(json_results, "message_time", (unsigned long)aJson.createItem(millis()));
+	aJson.addNumberToObject(json_response, "id", json_id);
+	Serial.print("JSON string:");	aJson.print(json_response, &serial_stream);		Serial.println();
+	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
+		aJson.deleteItem(jsondataobjs[obj_no]);
+	}
+	//aJson.deleteItem(json_results);
+	aJson.deleteItem(json_response); // should also delete json_results
+	
+	Serial.println("in generateStatusMessage()");
 }
 
+void clearDataMap() {
+	for (uint8_t i = 0; i < BROKERDATA_OBJECTS; i++) {
+		data_map[i] = 0;
+	}
+}
+
+// Move this to separate local library at some point.
+bool processSerial() {
+	if (serial_stream.available()) {
+		// skip any accidental whitespace like newlines
+		serial_stream.skip();
+	}
+
+	if (serial_stream.available()) {
+		Serial.println("DATA  FOUND!");
+		aJsonObject *msg = aJson.parse(&serial_stream);
+
+		if (msg != NULL) {
+			Serial.println("PROCESSING MESSAGE!");
+			uint8_t message_type = getMessageType(msg);
+			switch (message_type) {
+			case (BROKER_STATUS): // Get status of items listed in jsonrpc_params
+				if (processBrokerStatus()) generateStatusMessage();
+				break;
+			case (BROKER_SUBSCRIBE): break;
+			case (BROKER_UNSUBSCRIBE): break;
+			case (BROKER_SET): break;
+			case (BROKER_LIST_DATA): break;
+			}
+		}
+		else {
+			serial_stream.flush();
+			aJsonObject *response = aJson.createObject();
+			aJsonObject *error = aJson.createObject();
+			aJson.addItemToObject(response, "jsonrpc", aJson.createItem("2.0"));
+			aJson.addItemToObject(response, "id", aJson.createNull());
+			aJson.addItemToObject(error, "code", aJson.createItem(-32700));
+			aJson.addItemToObject(error, "message", aJson.createItem("Parse error."));
+			aJson.addItemToObject(response, "error", error);
+			aJson.print(response, &serial_stream);
+			aJson.deleteItem(error);
+			aJson.deleteItem(response);
+		}
+		aJson.deleteItem(msg);
+		return true;
+	}
+	else {
+		Serial.println("NONE FOUND");
+		return false;
+	}
+
+}
