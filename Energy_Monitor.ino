@@ -157,14 +157,14 @@ void loop()
 	//DEBUG END
 	*/
 	// retreive new data
-	double vcc = v_cc.getData();
-	double vbatt = v_batt.getData();
-	double currentl = current_l.getData();
-	double currentc = current_c.getData();
-	double powerl = power_l.getData();
-	double powerc = power_c.getData();
-	double energyl = energy_l.getData();
-	double energyc = energy_l.getData();
+	v_cc.getData();
+	v_batt.getData();
+	current_l.getData();
+	current_c.getData();
+	power_l.getData();
+	power_c.getData();
+	energy_l.getData();
+	energy_l.getData();
 	// See what subscriptions are up
 	if (checkSubscriptions() > 0) processSubscriptions();
 	delay(LOOP_DELAY_TIME_MS); // MAY BE WORTH LOOKING IN TO LOWERING POWER CONSUMPTION HERE
@@ -293,54 +293,52 @@ uint8_t processBrokerStatus(aJsonObject *json_in_msg) {
 	uint8_t status_matches_found = 0;
 	// First process style
 	aJsonObject *jsonrpc_params = aJson.getObjectItem(json_in_msg, "params");
-	//aJsonObject *jsonrpc_style = aJson.getObjectItem(aJson.getObjectItem(json_in_msg, "params"), "style");
+	// Extract Style
 	aJsonObject *jsonrpc_style = aJson.getObjectItem(jsonrpc_params, "style");
-	if (!strcmp(jsonrpc_style->valuestring, "terse")) {
-		status_verbose = true;
-	}
+	if (!strcmp(jsonrpc_style->valuestring, "terse")) status_verbose = true;
 	else status_verbose = false;
 	aJson.deleteItem(jsonrpc_style);
-	printFreeRam("pBS style");
-	// Now data
-	//aJsonObject *jsonrpc_data = aJson.getObjectItem(aJson.getObjectItem(json_in_msg, "params"), "data");
-	aJsonObject *jsonrpc_data = aJson.getObjectItem(jsonrpc_params, "data");
-	Serial.print(F("1 Msg: ")); aJson.print(json_in_msg, &serial_stream); Serial.println();
-	Serial.print(F("Data: ")); aJson.print(jsonrpc_data, &serial_stream); Serial.println();
-	aJson.print(jsonrpc_data, &serial_stream);
-	aJson.deleteItem(jsonrpc_params);
-	aJsonObject *jsonrpc_data_item = jsonrpc_data->child;
-	printFreeRam("pBS data 1");
-	while (jsonrpc_data_item) { 
-		for (uint8_t broker_data_idx = 0; broker_data_idx < BROKERDATA_OBJECTS; broker_data_idx++) {
-			Serial.print("Comparing "); Serial.print(jsonrpc_data_item->valuestring); Serial.print(" to "); Serial.println(brokerobjs[broker_data_idx]->getName());
-			if (strcmp(jsonrpc_data_item->valuestring, brokerobjs[broker_data_idx]->getName())) {
-				data_map[broker_data_idx] = 0;
-			}
-			else {
-
-				Serial.print(F("B data: ")); Serial.println(jsonrpc_data_item->valuestring);
-				data_map[broker_data_idx] = 1; 
-				status_matches_found++;
-			}
-			printFreeRam("pBS data 2");
-		}
-		jsonrpc_data_item = jsonrpc_data_item->next;
-		printFreeRam("pBS data 3");
-	}
-	aJson.deleteItem(jsonrpc_data);
-	printFreeRam("pBS got data");
-	// Finally ID
+	// Now ID
 	aJsonObject *jsonrpc_id = aJson.getObjectItem(aJson.getObjectItem(json_in_msg, "params"), "id");
 	if (jsonrpc_id) json_id = jsonrpc_id->valueint;
 	else json_id = 0;
 	printFreeRam("pBS got id");
 	aJson.deleteItem(jsonrpc_id);
-	//aJson.deleteItem(::jsonrpc_params); // Should no longer be needed
+	// Now Extract data list
+	aJsonObject *jsonrpc_data = aJson.getObjectItem(jsonrpc_params, "data");
+	//Serial.print(F("1 Msg: ")); aJson.print(json_in_msg, &serial_stream); Serial.println();
+	//Serial.print(F("Data: ")); aJson.print(jsonrpc_data, &serial_stream); Serial.println();
+	//aJson.print(jsonrpc_data, &serial_stream);
+	// Now parse data list and set data_map array values
+	aJsonObject *jsonrpc_data_item = jsonrpc_data->child;
+	//Serial.print(jsonrpc_data_item->valuestring);
+	printFreeRam("pBS data 1");
+	clearDataMap();
+	while (jsonrpc_data_item) { 
+		for (uint8_t broker_data_idx = 0; broker_data_idx < BROKERDATA_OBJECTS; broker_data_idx++) {
+			//Serial.print("Comparing "); Serial.print(jsonrpc_data_item->valuestring); Serial.print(" to "); Serial.println(brokerobjs[broker_data_idx]->getName());
+			if (!strcmp(jsonrpc_data_item->valuestring, brokerobjs[broker_data_idx]->getName())) {
+				//Serial.print(F("B data: ")); Serial.println(jsonrpc_data_item->valuestring);
+				data_map[broker_data_idx] = 1; 
+				//Serial.print(broker_data_idx); Serial.print("="); Serial.println(::data_map[broker_data_idx]);
+				status_matches_found++;
+				break; // break out of for loop
+			}
+		}
+		jsonrpc_data_item = jsonrpc_data_item->next;
+	}
+	aJson.deleteItem(jsonrpc_data_item);
+	//Serial.print(F("pBS matches:")); Serial.println(status_matches_found);
+	aJson.deleteItem(jsonrpc_data);
+	printFreeRam("pBS got data");
+	//aJson.deleteItem(jsonrpc_params); // This crashes program
 	return status_matches_found;
 }
 
-void generateStatusMessage(aJsonObject *json_resp) {
+void generateStatusMessage() {
 	printFreeRam("gSM start");
+	const uint8_t STATVALWIDTH = 10;
+	const uint8_t STATVALPREC = 3;
 	// based on contents of datamap array, generate status message.
 	/*
 	{
@@ -352,7 +350,7 @@ void generateStatusMessage(aJsonObject *json_resp) {
         "Vcc" : {
             "value" : 4.85,
             "units" : "V",
-            "sample_time":20110801135647605},
+            "sample_time":20110801135647605}
     "id" : 1
 	}
 	*/
@@ -392,7 +390,7 @@ void generateStatusMessage(aJsonObject *json_resp) {
 
 void clearDataMap() {
 	for (uint8_t i = 0; i < BROKERDATA_OBJECTS; i++) {
-		data_map[i] = 0;
+		::data_map[i] = 0;
 	}
 }
 
@@ -419,9 +417,10 @@ bool processSerial() {
 			switch (message_type) {
 				case (BROKER_STATUS): // Get status of items listed in jsonrpc_params
 					if (processBrokerStatus(serial_msg)) {
-						aJsonObject *json_response = aJson.createObject();
-						generateStatusMessage(json_response);
-						aJson.deleteItem(json_response);
+						printFreeRam("pS BROKER_STATUS 1");
+						//aJson.deleteItem(serial_msg); // Done with msg.
+						printFreeRam("pS BROKER_STATUS 2");
+						generateStatusMessage();
 					}
 					break;
 				case (BROKER_SUBSCRIBE): break;
@@ -429,7 +428,6 @@ bool processSerial() {
 				case (BROKER_SET): break;
 				case (BROKER_LIST_DATA): break;
 			}
-			aJson.deleteItem(serial_msg); // Done with msg.
 		}
 		else {
 			serial_stream.flush();
