@@ -7,12 +7,12 @@
 */
 class BrokerData {
 public:
-	BrokerData(char *name, char *unit,bool ro) {
+	BrokerData(const char *name, const char *unit,bool ro) {
 		strncpy(_data_name, name, BROKER_DATA_NAME_LENGTH);
 		strncpy(_data_unit, unit, BROKER_DATA_UNIT_LENGTH);
 		_subscription_rate = 0;
-		_last_sample_time = NAN;
-		_subscription_time = NAN;
+		_last_sample_time = 0;
+		_subscription_time = 0;
 		_sub_verbose = true;
 		_data_value = NAN;
 		_data_max = NAN;
@@ -27,7 +27,7 @@ public:
 	const char	*getName() { return _data_name; }
 	const char	*getUnit() { return _data_unit; }
 	void	subscribe(uint8_t sub_rate_s) { _subscription_rate = sub_rate_s;}
-	void	unsubscribe() { _subscription_rate = 0; _subscription_time = NAN; }
+	void	unsubscribe() { _subscription_rate = 0; _subscription_time = 0; }
 	bool	isSubscribed() { return (bool)_subscription_rate; }
 	bool	subscriptionDue();
 	uint8_t		getSubscriptionRate() { return _subscription_rate; }
@@ -61,7 +61,7 @@ Always Read Only
 */
 class ADCData : public BrokerData {
 public:
-	ADCData(char *name, char *unit, ADS1115 &ads, uint8_t ADCchannel) : BrokerData(name,unit,true) {
+	ADCData(const char *name, const char *unit, ADS1115 &ads, uint8_t ADCchannel) : BrokerData(name,unit,true) {
 		_channel = ADCchannel; // should be 0-4
 		_ads = &ads;
 	}
@@ -78,7 +78,7 @@ class VoltageData is a class for all data objects which represent a voltage obje
 */
 class VoltageData : public ADCData {
 public:
-	VoltageData(char *name, ADS1115 &ads, uint8_t ADCchannel, uint32_t high_div, uint32_t low_div) : ADCData(name,"V",ads,ADCchannel) {
+	VoltageData(const char *name, ADS1115 &ads, uint8_t ADCchannel, uint32_t high_div, uint32_t low_div) : ADCData(name,"V",ads,ADCchannel) {
 		_v_div = (high_div + low_div) / low_div;
 	}
 	double getData();
@@ -90,7 +90,7 @@ class CurrentData is a class for all data objects which represent a current obje
 */
 class CurrentData: public ADCData {
 public:
-	CurrentData(char *name, ADS1115 &ads,VoltageData &vcc,uint8_t ADCchannel,double mV_per_A) : ADCData(name,"A",ads,ADCchannel) {
+	CurrentData(const char *name, ADS1115 &ads,VoltageData &vcc,uint8_t ADCchannel,double mV_per_A) : ADCData(name,"A",ads,ADCchannel) {
 		_vcc = &vcc;
 		_mV_per_A = mV_per_A;
 	}
@@ -106,7 +106,7 @@ Always Read Only
 */
 class PowerData : public BrokerData {
 public:
-	PowerData(char *name, CurrentData &current, VoltageData &voltage) : BrokerData(name,"W",true) {
+	PowerData(const char *name, CurrentData &current, VoltageData &voltage) : BrokerData(name,"W",true) {
 		_voltage = &voltage;
 		_current = &current;
 	}
@@ -122,7 +122,7 @@ class EnergyData is a class for all data objects which represent an energy objec
 */
 class EnergyData : public BrokerData {
 public:
-	EnergyData(char *name, PowerData &power) : BrokerData(name,"Wh",false) {
+	EnergyData(const char *name, PowerData &power) : BrokerData(name,"Wh",false) {
 		_power = &power;
 }
 	double getData(); // Calculates new Energy based on most recent power

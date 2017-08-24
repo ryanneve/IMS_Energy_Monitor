@@ -145,8 +145,7 @@ void loop()
 	// Get data
 	/*
 	char _buf[10];
-	double adc;
-	adc = v_cc.getADCreading();
+	double adc= v_cc.getADCreading();
 	Serial.print("Channel: "); Serial.print(v_cc.getChannel());
 	dtostrf(adc, 7, 4, _buf);
 	Serial.print("  ADC Vcc "); Serial.println(_buf);
@@ -171,35 +170,30 @@ void loop()
 }
 
 void processSubscriptions() {
-	printFreeRam("pS start");
+	printFreeRam("pSub start");
 	// This should be a function .
 	uint8_t sub_idx = 0;
 	aJsonObject *json_root, *json_params;
 	aJsonObject *jsondataobjs[BROKERDATA_OBJECTS]; // Holds objects used for data output
-
 	json_root = aJson.createObject();
 	aJson.addItemToObject(json_root, "method", aJson.createItem("subscription"));
 	aJson.addItemToObject(json_root, "params", json_params = aJson.createObject());
-	// This might also be a function
 	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
 		if (data_map[obj_no] == true) {
 			aJson.addItemToObject(json_params, brokerobjs[obj_no]->getName(), jsondataobjs[sub_idx] = aJson.createObject());
 			aJson.addNumberToObject(jsondataobjs[sub_idx], "value", brokerobjs[obj_no]->getValue());
 			if (brokerobjs[obj_no]->isVerbose()) {
 				aJson.addStringToObject(jsondataobjs[sub_idx], "units", brokerobjs[obj_no]->getUnit());
-				aJson.addNumberToObject(jsondataobjs[sub_idx], "sample_time", (int)brokerobjs[obj_no]->getSampleTime()); // returns time in millis() since start which is wrong...
+				aJson.addNumberToObject(jsondataobjs[sub_idx], "sample_time", (unsigned long)brokerobjs[obj_no]->getSampleTime()); // returns time in millis() since start which is wrong...
 			}
 			brokerobjs[obj_no]->setSubscriptionTime(); // Resets subscription time
 			sub_idx++;
 		}
 	}
-	aJson.addItemToObject(json_root, "message_time", (int)aJson.createItem(millis()));
+	aJson.addItemToObject(json_root, "message_time", aJson.createItem((unsigned long)millis()));
 	Serial.print(F("JSON string:"));	aJson.print(json_root, &serial_stream);		Serial.println();
-	//for (uint8_t obj_no = 0; obj_no < sub_idx; obj_no++) {
-	//	aJson.deleteItem(jsondataobjs[obj_no]);// Causes hang
-	//}
-	//free(jsondataobjs);
 	aJson.deleteItem(json_root);
+	printFreeRam("pSub end");
 }
 uint8_t checkSubscriptions() {
 	printFreeRam("cS start");
@@ -211,26 +205,40 @@ uint8_t checkSubscriptions() {
 			//Serial.print("S-");
 		}
 		else ::data_map[obj_no] = false;
-		/*
-		Serial.print(brokerobjs[obj_no]->getName());
-		Serial.print(" = ");
-		Serial.print(brokerobjs[obj_no]->getValue());
-		Serial.print(" ");
-		Serial.print(brokerobjs[obj_no]->getUnit());
-		Serial.println();
-		*/
 	}
 	return subs;
 }
 
-int freeRam() {
+uint32_t freeRam() {
+#ifdef __AVR__
+	//arduino
 	extern int __heap_start, *__brkval;
 	int v;
-	return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
+	return (uint32_t)&v - (__brkval == 0 ? (uint32_t)&__heap_start : (uint32_t)__brkval);
+#elif defined(__arm__)
+	// for Teensy 3.0
+	uint32_t stackTop;
+	uint32_t heapTop;
+
+	// current position of the stack.
+	stackTop = (uint32_t)&stackTop;
+
+	// current position of heap.
+	void* hTop = malloc(1);
+	heapTop = (uint32_t)hTop;
+	free(hTop);
+
+	// The difference is (approximately) the free, available ram.
+	return stackTop - heapTop;
+#else
+	return 0;
+#endif
 }
 
 
-void printFreeRam(char * msg) {
+void printFreeRam(const char * msg) {
+
+
 	Serial.print(F("Free RAM ("));
 	Serial.print(msg);
 	Serial.print("):");
@@ -239,51 +247,23 @@ void printFreeRam(char * msg) {
 }
 
 uint16_t getMessageType(aJsonObject** json_in_msg) {
-	// Create response
-	// Check required fields
+	// Extract method and ID from message.
 	printFreeRam("gMT start");
 	uint8_t json_method = BROKER_ERROR;
+
 	aJsonObject *jsonrpc_method = aJson.getObjectItem(*json_in_msg, "method");
-	aJsonObject *jsonrpc_id = aJson.getObjectItem(*json_in_msg, "id");
-	//aJsonObject *jsonrpc_params = aJson.getObjectItem(json_in_msg, "params");
-	//Serial.print(F("Parameters: ")); aJson.print(jsonrpc_params, &serial_stream); Serial.println();
-
-	if (!jsonrpc_method || !jsonrpc_id) {
-		// Not a valid Json-RPC 2.0 message
-		aJsonObject *json_response = aJson.createObject();
-		aJsonObject *error = aJson.createObject();
-		aJson.addItemToObject(error, "code", aJson.createItem(-32600));
-		aJson.addItemToObject(error, "message", aJson.createItem("Invalid Request."));
-		aJson.addItemToObject(json_response, "error", error);
-
-		if (!jsonrpc_id) {
-			aJson.addItemToObject(json_response, "id", aJson.createNull());
-			aJson.addItemToObject(error, "data", aJson.createItem("Missing id."));
-		}
-		else {
-			aJson.addItemToObject(json_response, "id", jsonrpc_id);
-			aJson.addItemToObject(error, "data", aJson.createItem("Missing method."));
-		}
-
-		aJson.print(json_response, &serial_stream);
-		aJson.deleteItem(json_response);
-		return;
-	}
-	
-	char *method_str = aJson.print(jsonrpc_method); // MIGHT BE A BETTER WAY TO DO THIS
 	for (uint8_t j_method = 0; j_method < JSON_REQUEST_COUNT; j_method++) {
-		if (strcmp(method_str, REQUEST_STRINGS[j_method])) {
+		if (!strcmp(jsonrpc_method->valuestring, REQUEST_STRINGS[j_method])) {
 			Serial.print(F("JSON request: "));
 			Serial.println(REQUEST_STRINGS[j_method]);
 			json_method = j_method;
 			break;
 		}
 	}
-	free(method_str);
-	//printFreeRam("gMT end1");
-	//aJson.deleteItem(jsonrpc_id);
-	//printFreeRam("gMT end2");
-	//aJson.deleteItem(jsonrpc_method);
+
+	aJsonObject *jsonrpc_id = aJson.getObjectItem(*json_in_msg, "id");
+	::json_id = jsonrpc_id->valueint;
+
 	printFreeRam("gMT end3");
 	return json_method;
 }
@@ -297,18 +277,18 @@ uint8_t processBrokerStatus(aJsonObject *json_in_msg) {
 	aJsonObject *jsonrpc_style = aJson.getObjectItem(jsonrpc_params, "style");
 	if (!strcmp(jsonrpc_style->valuestring, "terse")) status_verbose = true;
 	else status_verbose = false;
-	aJson.deleteItem(jsonrpc_style);
+	//aJson.deleteItem(jsonrpc_style);
+	
+	// Allready got ID
 	// Now ID
-	aJsonObject *jsonrpc_id = aJson.getObjectItem(aJson.getObjectItem(json_in_msg, "params"), "id");
-	if (jsonrpc_id) json_id = jsonrpc_id->valueint;
-	else json_id = 0;
-	printFreeRam("pBS got id");
-	aJson.deleteItem(jsonrpc_id);
+	//aJsonObject *jsonrpc_id = aJson.getObjectItem(aJson.getObjectItem(json_in_msg, "params"), "id");
+	//if (jsonrpc_id) json_id = jsonrpc_id->valueint;
+	//else json_id = 0;
+	//printFreeRam("pBS got id");
+	//aJson.deleteItem(jsonrpc_id);
+	
 	// Now Extract data list
 	aJsonObject *jsonrpc_data = aJson.getObjectItem(jsonrpc_params, "data");
-	//Serial.print(F("1 Msg: ")); aJson.print(json_in_msg, &serial_stream); Serial.println();
-	//Serial.print(F("Data: ")); aJson.print(jsonrpc_data, &serial_stream); Serial.println();
-	//aJson.print(jsonrpc_data, &serial_stream);
 	// Now parse data list and set data_map array values
 	aJsonObject *jsonrpc_data_item = jsonrpc_data->child;
 	//Serial.print(jsonrpc_data_item->valuestring);
@@ -327,9 +307,8 @@ uint8_t processBrokerStatus(aJsonObject *json_in_msg) {
 		}
 		jsonrpc_data_item = jsonrpc_data_item->next;
 	}
-	aJson.deleteItem(jsonrpc_data_item);
-	//Serial.print(F("pBS matches:")); Serial.println(status_matches_found);
-	aJson.deleteItem(jsonrpc_data);
+	//aJson.deleteItem(jsonrpc_data_item);
+	//aJson.deleteItem(jsonrpc_data);
 	printFreeRam("pBS got data");
 	//aJson.deleteItem(jsonrpc_params); // This crashes program
 	return status_matches_found;
@@ -339,6 +318,7 @@ void generateStatusMessage() {
 	printFreeRam("gSM start");
 	const uint8_t STATVALWIDTH = 10;
 	const uint8_t STATVALPREC = 3;
+	uint8_t dataLen = 0;
 	// based on contents of datamap array, generate status message.
 	/*
 	{
@@ -350,42 +330,30 @@ void generateStatusMessage() {
         "Vcc" : {
             "value" : 4.85,
             "units" : "V",
-            "sample_time":20110801135647605}
+            "sample_time":20110801135647605}}
     "id" : 1
-	}
-	*/
-	//Serial.println(F("1 in gSM()"));
-	//json_response = aJson.createObject();
-	aJsonObject *json_results;
-	aJson.addItemToObject(json_resp, "result", json_results = aJson.createObject());
-	//Serial.println(F("2 in gSM()"));
-	aJsonObject *jsondataobjs[BROKERDATA_OBJECTS]; // Holds objects used for data output DOES THIS NEED TO BE DELETED?
-	//Serial.println(F("4 in gSM()"));
-	uint8_t sub_idx = 0;
+	}*/
+	bool first = true;
+	char statusBuffer[200];
+	Serial.print(F("\"result\":{"));
 	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
-		Serial.println(obj_no);
-		if (data_map[obj_no] == true) {
-			Serial.print("    Found obj "); Serial.print(brokerobjs[obj_no]->getName());
-			// generate message
-			//aJson.addItemToObject(json_results, brokerobjs[obj_no]->getName(), jsondataobjs[obj_no] = aJson.createObject());
-			//aJson.addNumberToObject(jsondataobjs[sub_idx], "value", brokerobjs[obj_no]->getValue());
-			if (status_verbose) {
-				//aJson.addStringToObject(jsondataobjs[sub_idx], "units", brokerobjs[obj_no]->getUnit());
-				//aJson.addNumberToObject(jsondataobjs[sub_idx], "sample_time", brokerobjs[obj_no]->getSampleTime());
-
-			}
-			sub_idx++;
+		if (::data_map[obj_no] == true) {
+			char statusValue[STATVALWIDTH + 1] = "-999.99";
+			dtostrf((double)brokerobjs[obj_no]->getValue(), STATVALWIDTH, STATVALPREC, statusValue);
+			if (!first) dataLen += sprintf(statusBuffer + dataLen, ","); // preceding comma
+			dataLen += sprintf(statusBuffer + dataLen, "\"%s\": { ", brokerobjs[obj_no]->getName());
+			dataLen += sprintf(statusBuffer + dataLen, "\"value\" : %s,", statusValue);
+			dataLen += sprintf(statusBuffer + dataLen, "\"units\" : \"%s\" }", brokerobjs[obj_no]->getUnit());
+			Serial.print(statusBuffer);
+			dataLen = 0;
+			first = false;
 		}
 	}
-	aJson.addNumberToObject(json_results, "message_time", (unsigned long)aJson.createItem(millis()));
-	aJson.addNumberToObject(json_resp, "id", json_id);
-	Serial.print(F("JSON string:"));	aJson.print(json_resp, &serial_stream);		Serial.println();
-	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
-		aJson.deleteItem(jsondataobjs[obj_no]);
-	}
-	//aJson.deleteItem(json_results);
-	aJson.deleteItem(json_resp); // should also delete json_results
-	Serial.println(F("gSM end"));
+	dataLen = 0;
+	dataLen += sprintf(statusBuffer + dataLen, "},\"id\":%u}", json_id);
+	Serial.println(statusBuffer);
+	free(statusBuffer);
+	printFreeRam("gSM end");
 }
 
 void clearDataMap() {
@@ -396,30 +364,29 @@ void clearDataMap() {
 
 // Move this to separate local library at some point.
 bool processSerial() {
-	printFreeRam("pS start");
+	printFreeRam("pSer start");
 	if (serial_stream.available()) {
 		// skip any accidental whitespace like newlines
 		serial_stream.skip();
 	}
 
 	if (serial_stream.available()) {
-		//Serial.println(F("DATA  FOUND!"));
+		Serial.println(F("DATA  FOUND!"));
+		uint8_t message_type;
 		aJsonObject *serial_msg = aJson.parse(&serial_stream);
-
+		printFreeRam("pSer s_msg");
+		
 		if (serial_msg != NULL) {
 			//Serial.println(F("PROCESSING MESSAGE!"));
 			Serial.print(F("AMsg: ")); aJson.print(serial_msg, &serial_stream); Serial.println();
-			uint8_t message_type = getMessageType(&serial_msg);
-
-			//aJsonObject *jsonrpc_params = aJson.getObjectItem(json_in_msg, "params");
-
-			Serial.print(F("BMsg: ")); aJson.print(serial_msg, &serial_stream); Serial.println();
+			message_type = getMessageType(&serial_msg);
+			printFreeRam("pSer 1");
 			switch (message_type) {
 				case (BROKER_STATUS): // Get status of items listed in jsonrpc_params
 					if (processBrokerStatus(serial_msg)) {
-						printFreeRam("pS BROKER_STATUS 1");
-						//aJson.deleteItem(serial_msg); // Done with msg.
-						printFreeRam("pS BROKER_STATUS 2");
+						printFreeRam("pSer 2");
+						aJson.deleteItem(serial_msg); // done with incoming message
+						printFreeRam("pSer 3");
 						generateStatusMessage();
 					}
 					break;
@@ -430,7 +397,6 @@ bool processSerial() {
 			}
 		}
 		else {
-			serial_stream.flush();
 			aJsonObject *response = aJson.createObject();
 			aJsonObject *error = aJson.createObject();
 			aJson.addItemToObject(response, "jsonrpc", aJson.createItem("2.0"));
@@ -442,11 +408,16 @@ bool processSerial() {
 			aJson.deleteItem(error);
 			aJson.deleteItem(response);
 		}
+		serial_stream.flush(); // No longer need data
+		printFreeRam("pSer near end 3");
+		if (serial_msg) aJson.deleteItem(serial_msg); // done with incoming message
+		printFreeRam("pSer end 3");
 		return true;
 	}
 	else {
-		Serial.println(F("NO MESSAGES FOUND"));
+		Serial.println(F("NO DATA FOUND"));
 		return false;
 	}
 
 }
+

@@ -32,11 +32,11 @@ uint8_t BrokerData::_checkMinMax() {
 	// 3 = new min & max (usally first value)
 	uint8_t newMinMax = 0;
 	if (!isnan(_data_value)) {
-		if (_data_value > _data_max | isnan(_data_max)) {
+		if ((_data_value > _data_max) | isnan(_data_max)) {
 			_data_max = _data_value;
 			newMinMax +=2;
 		}
-		if (_data_value < _data_min | isnan(_data_min)) {
+		if ((_data_value < _data_min) | isnan(_data_min)) {
 			_data_min = _data_value;
 			newMinMax +=1;
 		}
