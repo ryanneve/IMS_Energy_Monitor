@@ -7,6 +7,15 @@
 
 #define MS_PER_HR 3600000
 
+
+
+void BrokerData::subscribe(uint32_t sub_min_rate_ms, uint32_t sub_max_rate_ms) {
+	_subscription_rate_ms = sub_min_rate_ms;
+	_subscription_max_ms = sub_max_rate_ms;
+	_subscription_time = 0; // Should sync items already subscribed.
+}
+
+
 bool BrokerData::subscriptionDue() {
 	// Used to determine if it's time to report a subscription
 	if (_subscription_rate_ms == 0) return false; // Not subscribed
@@ -108,6 +117,15 @@ double PowerData::getData() {
 	return _data_value;
 }
 
+
+bool PowerData::setData(double set_value) {
+	if (set_value == 0) {
+		resetData();
+		return true;
+	}
+	else return false;
+}
+
 void PowerData::resetData() { 
 	_data_value = 0;
 	resetMin();
@@ -118,10 +136,11 @@ double EnergyData::getData() {
 	_setDataValue((_power->getValue() * (double)_getTimeDelta()) / (double)MS_PER_HR);
 	return _data_value;
 }
-void EnergyData::setData(double power_Wh) {
+bool EnergyData::setData(double power_Wh) {
 	// In certain instances, like after a reboot, _data_value should be initialized to a non-zero value.
 	_setDataValue(power_Wh);
 	_getTimeDelta();
+	return true;
 }
 
 

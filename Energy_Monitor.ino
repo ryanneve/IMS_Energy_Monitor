@@ -262,7 +262,7 @@ uint16_t getMessageType(aJsonObject** json_in_msg) {
 			break;
 		}
 	}
-
+	// Get ID here
 	aJsonObject *jsonrpc_id = aJson.getObjectItem(*json_in_msg, "id");
 	::json_id = jsonrpc_id->valueint;
 
@@ -524,6 +524,53 @@ uint8_t processBrokerSubscribe(aJsonObject *json_in_msg) {
 	return subscribe_matches_found;
 }
 
+
+uint8_t processSet(aJsonObject *json_in_msg) {
+	/* process set message
+	{"method" : "set", "params" : {"Load_Energy":0,"Charge_Energy":0},"id" : 17}
+	*/
+	aJsonObject *jsonrpc_params = aJson.getObjectItem(json_in_msg, "params");
+	uint8_t parameters_set = 0;
+	// Start output
+	char statusBuffer[PARAM_BUFFER_SIZE]; // Should be plenty big to hold output for one parameter
+	uint16_t dataIdx = 0; // should never exceed PARAM_BUFFER_SIZE
+	Serial.print(F("{\"result\":{"));
+	// So now we have 1 to n items of unknown name. Will have to iterate, and check existance.
+	bool first = false;
+	for (uint8_t broker_data_idx = 0; broker_data_idx < BROKERDATA_OBJECTS; broker_data_idx++) {
+		dataIdx = 0;
+		aJsonObject *jsonrpc_set_param = aJson.getObjectItem(jsonrpc_params, brokerobjs[broker_data_idx]->getName());
+		if (jsonrpc_set_param) {
+			// Found one!
+			if (!first) dataIdx += sprintf(statusBuffer + dataIdx, ","); // preceding comma
+			dataIdx += sprintf(statusBuffer + dataIdx, "\"%s\":{\"status\":", jsonrpc_set_param->valuestring);
+			if (!brokerobjs[broker_data_idx]->isRO()) {
+				// Settable
+				double setValue = jsonrpc_set_param->valuefloat;
+				bool success = brokerobjs[broker_data_idx]->setData((double)setValue);
+				if (success) {
+					dataIdx += sprintf(statusBuffer + dataIdx, "\"ok\"}");
+					parameters_set++;
+				}
+				else {
+					// couldn't set
+					dataIdx += sprintf(statusBuffer + dataIdx, "\"error, couldn't set\"}");
+				}
+			}
+			else dataIdx += sprintf(statusBuffer + dataIdx, "\"error, RO\"}");
+			first = true;
+			Serial.print(statusBuffer);
+			dataIdx = 0;
+		}
+	}
+	// Now finish output
+	// Should add update rates....
+	dataIdx = 0;
+	dataIdx += sprintf(statusBuffer + dataIdx, "},\"id\":%u}", json_id);
+	Serial.println(statusBuffer);
+	return parameters_set;
+}
+
 void genereateSubscribeMessage() {
 	// Generates response to subscribe message
 }
@@ -573,7 +620,9 @@ bool processSerial() {
 				case (BROKER_UNSUBSCRIBE): 
 					processBrokerUnubscribe(serial_msg); 
 					break;
-				case (BROKER_SET): break;
+				case (BROKER_SET): 
+					processSet(serial_msg);
+					break;
 				case (BROKER_LIST_DATA): break;
 			}
 		}

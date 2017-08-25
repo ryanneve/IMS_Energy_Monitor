@@ -27,10 +27,7 @@ public:
 	void	resetMax() { _data_max = NAN; }
 	const char	*getName() { return _data_name; }
 	const char	*getUnit() { return _data_unit; }
-	void	subscribe(uint32_t sub_min_rate_ms, uint32_t sub_max_rate_ms) {
-		_subscription_rate_ms = sub_min_rate_ms; 
-		_subscription_max_ms = sub_max_rate_ms;
-	}
+	void	subscribe(uint32_t sub_min_rate_ms, uint32_t sub_max_rate_ms);
 	void	setSubOnChange(bool on_change) { _sub_on_change = on_change; }
 	void	subscribe(uint32_t sub_rate_ms) { subscribe(sub_rate_ms,0);} // _subscription_max_ms defaults to 0 
 	void	unsubscribe() { _subscription_rate_ms = 0; _subscription_time = 0; }
@@ -40,8 +37,10 @@ public:
 	void		setSubscriptionTime() { _subscription_time = millis(); } // Called when subscription is generated.
 	void		setVerbose(bool verbose) { _sub_verbose = verbose; }
 	bool		isVerbose() { return _sub_verbose; }
+	bool		isRO() { return _ro; }
 	uint32_t	getSampleTime() { return _last_sample_time; }
 	virtual double getData() = 0;
+	virtual bool setData(double set_value) = 0;
 
 protected:
 	uint32_t	_getTimeDelta();
@@ -90,6 +89,7 @@ public:
 		_v_div = (high_div + low_div) / low_div;
 	}
 	double getData();
+	bool	setData(double set_value) { return false; }
 private:
 	double	_v_div;
 };
@@ -103,6 +103,7 @@ public:
 		_mV_per_A = mV_per_A;
 	}
 	double	getData();
+	bool	setData(double set_value) { return false; }
 private:
 	double	_mV_per_A;
 	VoltageData	*_vcc;
@@ -119,6 +120,7 @@ public:
 		_current = &current;
 	}
 	double	getData();	// Calculates new Power based on most recent current and voltage
+	bool	setData(double set_value);
 	void	resetData();
 private:
 	CurrentData	*_current;
@@ -134,8 +136,8 @@ public:
 		_power = &power;
 }
 	double getData(); // Calculates new Energy based on most recent power
-	void	setData(double energy_value);	// Used for setting value, usually after reboot.
-	void	resetData() { setData(0);}
+	bool	setData(double energy_value);	// Used for setting value, usually after reboot.
+	bool	resetData() { return setData(0);}
 private:
 	PowerData	*_power;
 };
