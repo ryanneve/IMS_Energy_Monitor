@@ -60,6 +60,8 @@ TO DO
 #define ADC_CHANNEL_VOLTAGE	2
 #define ADC_CHANNEL_VCC	3
 #define BROKERDATA_OBJECTS 8
+#define BROKER_MIN_UPDATE_RATE_MS 500
+#define PARAM_BUFFER_SIZE  200 // should be >~100
 
 // define constants
 const uint8_t ADS1115_ADDRESS = 0x48;
@@ -108,8 +110,8 @@ void setup() {
 	//Serial1.begin(57600);	// PINS
 	while (!Serial);	// Leonardo seems to need this
 	//while (!Serial1);	// Leonardo seems to need this
+	Serial.println(F("IMS Power Monitor"));
 	delay(3000);
-	//Serial.println(Setup_ads() ? "ADS1115 connection successful" : "ADS1115 connection failed");
 	Serial.println(ads.testConnection() ? F("ADS1115 connected") : F("ADS1115  failed"));
 	ads.initialize();
 	// We're going to do single shot sampling
@@ -129,8 +131,8 @@ void setup() {
 	brokerobjs[6] = &energy_l;
 	brokerobjs[7] = &energy_c;
 	//BEGIN DEBUG
-	v_batt.subscribe(4);
-	v_cc.subscribe(5);
+	//v_batt.subscribe(4000);
+	//v_cc.subscribe(15000);
 	// END DEBUG
 
 }
@@ -170,7 +172,7 @@ void loop()
 }
 
 void processSubscriptions() {
-	printFreeRam("pSub start");
+	//printFreeRam("pSub start");
 	// This should be a function .
 	uint8_t sub_idx = 0;
 	aJsonObject *json_root, *json_params;
@@ -191,12 +193,15 @@ void processSubscriptions() {
 		}
 	}
 	aJson.addItemToObject(json_root, "message_time", aJson.createItem((unsigned long)millis()));
-	Serial.print(F("JSON string:"));	aJson.print(json_root, &serial_stream);		Serial.println();
+	//Serial.print(F("JSON string:"));
+	char * aJsonPtr = aJson.print(json_root);
+	Serial.println(aJsonPtr); // Prints out subscription message
+	free(aJsonPtr); // So we don't have a memory leak
 	aJson.deleteItem(json_root);
-	printFreeRam("pSub end");
+	//printFreeRam("pSub end");
 }
 uint8_t checkSubscriptions() {
-	printFreeRam("cS start");
+	//printFreeRam("cS start");
 	uint8_t subs = 0;
 	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
 		if (::brokerobjs[obj_no]->subscriptionDue()) {
@@ -235,27 +240,24 @@ uint32_t freeRam() {
 #endif
 }
 
-
 void printFreeRam(const char * msg) {
-
-
-	Serial.print(F("Free RAM ("));
+	/*Serial.print(F("Free RAM ("));
 	Serial.print(msg);
 	Serial.print("):");
 	Serial.println(freeRam());
-
+	*/
 }
 
 uint16_t getMessageType(aJsonObject** json_in_msg) {
 	// Extract method and ID from message.
-	printFreeRam("gMT start");
+	//printFreeRam("gMT start");
 	uint8_t json_method = BROKER_ERROR;
 
 	aJsonObject *jsonrpc_method = aJson.getObjectItem(*json_in_msg, "method");
 	for (uint8_t j_method = 0; j_method < JSON_REQUEST_COUNT; j_method++) {
 		if (!strcmp(jsonrpc_method->valuestring, REQUEST_STRINGS[j_method])) {
-			Serial.print(F("JSON request: "));
-			Serial.println(REQUEST_STRINGS[j_method]);
+			//Serial.print(F("JSON request: "));
+			//Serial.println(REQUEST_STRINGS[j_method]);
 			json_method = j_method;
 			break;
 		}
@@ -264,12 +266,12 @@ uint16_t getMessageType(aJsonObject** json_in_msg) {
 	aJsonObject *jsonrpc_id = aJson.getObjectItem(*json_in_msg, "id");
 	::json_id = jsonrpc_id->valueint;
 
-	printFreeRam("gMT end3");
+	//printFreeRam("gMT end3");
 	return json_method;
 }
 
 uint8_t processBrokerStatus(aJsonObject *json_in_msg) {
-	printFreeRam("pBS start");
+	//printFreeRam("pBS start");
 	uint8_t status_matches_found = 0;
 	// First process style
 	aJsonObject *jsonrpc_params = aJson.getObjectItem(json_in_msg, "params");
@@ -277,48 +279,38 @@ uint8_t processBrokerStatus(aJsonObject *json_in_msg) {
 	aJsonObject *jsonrpc_style = aJson.getObjectItem(jsonrpc_params, "style");
 	if (!strcmp(jsonrpc_style->valuestring, "terse")) status_verbose = true;
 	else status_verbose = false;
-	//aJson.deleteItem(jsonrpc_style);
 	
-	// Allready got ID
-	// Now ID
-	//aJsonObject *jsonrpc_id = aJson.getObjectItem(aJson.getObjectItem(json_in_msg, "params"), "id");
-	//if (jsonrpc_id) json_id = jsonrpc_id->valueint;
-	//else json_id = 0;
-	//printFreeRam("pBS got id");
-	//aJson.deleteItem(jsonrpc_id);
-	
+
+	clearDataMap(); // Sets all data_map array values to false
+
 	// Now Extract data list
 	aJsonObject *jsonrpc_data = aJson.getObjectItem(jsonrpc_params, "data");
+	// data will be list of parameters: ["Voltage","Vcc",Current_Load"]
 	// Now parse data list and set data_map array values
 	aJsonObject *jsonrpc_data_item = jsonrpc_data->child;
 	//Serial.print(jsonrpc_data_item->valuestring);
-	printFreeRam("pBS data 1");
-	clearDataMap();
+	//printFreeRam("pBS data 1");
 	while (jsonrpc_data_item) { 
 		for (uint8_t broker_data_idx = 0; broker_data_idx < BROKERDATA_OBJECTS; broker_data_idx++) {
 			//Serial.print("Comparing "); Serial.print(jsonrpc_data_item->valuestring); Serial.print(" to "); Serial.println(brokerobjs[broker_data_idx]->getName());
 			if (!strcmp(jsonrpc_data_item->valuestring, brokerobjs[broker_data_idx]->getName())) {
 				//Serial.print(F("B data: ")); Serial.println(jsonrpc_data_item->valuestring);
-				data_map[broker_data_idx] = 1; 
+				data_map[broker_data_idx] = true; 
 				//Serial.print(broker_data_idx); Serial.print("="); Serial.println(::data_map[broker_data_idx]);
 				status_matches_found++;
 				break; // break out of for loop
 			}
 		}
-		jsonrpc_data_item = jsonrpc_data_item->next;
+		jsonrpc_data_item = jsonrpc_data_item->next; // Set pointer for jsonrpc_data_item to next item.
 	}
-	//aJson.deleteItem(jsonrpc_data_item);
-	//aJson.deleteItem(jsonrpc_data);
-	printFreeRam("pBS got data");
-	//aJson.deleteItem(jsonrpc_params); // This crashes program
 	return status_matches_found;
 }
 
 void generateStatusMessage() {
-	printFreeRam("gSM start");
-	const uint8_t STATVALWIDTH = 10;
+	//printFreeRam("gSM start");
+	const uint8_t STATVALWIDTH = 5;
 	const uint8_t STATVALPREC = 3;
-	uint8_t dataLen = 0;
+	uint16_t dataIdx = 0; // should never exceed PARAM_BUFFER_SIZE
 	// based on contents of datamap array, generate status message.
 	/*
 	{
@@ -334,31 +326,211 @@ void generateStatusMessage() {
     "id" : 1
 	}*/
 	bool first = true;
-	char statusBuffer[200];
 	Serial.print(F("\"result\":{"));
+	char statusBuffer[PARAM_BUFFER_SIZE]; // Should be plenty big to hold output for one parameter
+
 	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
 		if (::data_map[obj_no] == true) {
-			char statusValue[STATVALWIDTH + 1] = "-999.99";
-			dtostrf((double)brokerobjs[obj_no]->getValue(), STATVALWIDTH, STATVALPREC, statusValue);
-			if (!first) dataLen += sprintf(statusBuffer + dataLen, ","); // preceding comma
-			dataLen += sprintf(statusBuffer + dataLen, "\"%s\": { ", brokerobjs[obj_no]->getName());
-			dataLen += sprintf(statusBuffer + dataLen, "\"value\" : %s,", statusValue);
-			dataLen += sprintf(statusBuffer + dataLen, "\"units\" : \"%s\" }", brokerobjs[obj_no]->getUnit());
+			char statusValue[10] = "-999"; // Holds status double value as a string
+			dtostrf((double)brokerobjs[obj_no]->getValue(), STATVALWIDTH, STATVALPREC, statusValue); // convert (double) statusValue to string
+			if (!first) dataIdx += sprintf(statusBuffer + dataIdx, ","); // preceding comma
+			dataIdx += sprintf(statusBuffer + dataIdx, "\"%s\":{", brokerobjs[obj_no]->getName());
+			dataIdx += sprintf(statusBuffer + dataIdx, "\"value\":%s,", statusValue);
+			dataIdx += sprintf(statusBuffer + dataIdx, "\"units\":\"%s\"}", brokerobjs[obj_no]->getUnit());
 			Serial.print(statusBuffer);
-			dataLen = 0;
+			dataIdx = 0; // reset for next Parameter.
 			first = false;
 		}
 	}
-	dataLen = 0;
-	dataLen += sprintf(statusBuffer + dataLen, "},\"id\":%u}", json_id);
+	dataIdx = 0;
+	dataIdx += sprintf(statusBuffer + dataIdx, "},\"id\":%u}", json_id);
 	Serial.println(statusBuffer);
-	free(statusBuffer);
-	printFreeRam("gSM end");
+	//printFreeRam("gSM end");
+}
+
+
+
+
+uint8_t processBrokerUnubscribe(aJsonObject *json_in_msg) {
+	/*Processes an un-subscribe message
+	For example:
+	{"method" : "unsubscribe",
+	"params" : {"data":["Voltage", "Vcc"]}
+	"id" : 14}
+	*/
+
+	uint8_t unsubscribe_matches_found = 0;
+	aJsonObject *jsonrpc_params = aJson.getObjectItem(json_in_msg, "params");
+	// Now Extract data list
+	aJsonObject *jsonrpc_data = aJson.getObjectItem(jsonrpc_params, "data");
+
+	// Start output
+	char statusBuffer[PARAM_BUFFER_SIZE]; // Should be plenty big to hold output for one parameter
+	uint16_t dataIdx = 0; // should never exceed PARAM_BUFFER_SIZE
+	Serial.print(F("{\"result\":{"));
+
+	// Now parse data list
+	if (jsonrpc_data) {
+		aJsonObject *jsonrpc_data_item = jsonrpc_data->child;
+		//Serial.print(jsonrpc_data_item->valuestring);
+		//printFreeRam("pBS data 1");
+		while (jsonrpc_data_item) {
+			bool found = false;
+			for (uint8_t broker_data_idx = 0; broker_data_idx < BROKERDATA_OBJECTS; broker_data_idx++) {
+				dataIdx = 0;
+				dataIdx += sprintf(statusBuffer + dataIdx, "\"%s\":{", jsonrpc_data_item->valuestring); // even if it's bad data
+				if (!strcmp(jsonrpc_data_item->valuestring, brokerobjs[broker_data_idx]->getName())) {
+					unsubscribe_matches_found++;
+					// Set subscription up
+					brokerobjs[broker_data_idx]->unsubscribe();
+					found = true;
+					dataIdx += sprintf(statusBuffer + dataIdx, "\"status\":\"ok\"},");
+					break; // break out of for loop
+				}
+			}
+			if (found == false) dataIdx += sprintf(statusBuffer + dataIdx, "\"status\":\"error\"},"); // There should be more to this, but that's all for now.
+			Serial.print(statusBuffer);
+			jsonrpc_data_item = jsonrpc_data_item->next; // Set pointer for jsonrpc_data_item to next item.
+		}
+	}
+	// Now finish output
+	// Should add update rates....
+	dataIdx = 0;
+	dataIdx += sprintf(statusBuffer + dataIdx, "},\"id\":%u}", json_id);
+	Serial.println(statusBuffer);
+	return unsubscribe_matches_found;
+}
+
+uint8_t processBrokerSubscribe(aJsonObject *json_in_msg) {
+	/*Processes a subscribe message
+	For example:
+	{"method" : "subscribe",
+	 "params" : {
+		"data":["Voltage", "Vcc"],
+		"style":"terse",
+		"updates":"on_change",
+		"min_update_rate":1000}
+	"id" : 14}
+	*/
+	printFreeRam("pBSub start");
+	uint8_t subscribe_matches_found = 0;
+	bool subscribe_verbose = true;
+	bool subscribe_on_change = true;
+	uint32_t subscribe_min_update_ms = __LONG_MAX__;
+	uint32_t subscribe_max_update_ms = __LONG_MAX__;
+	// First process style
+	aJsonObject *jsonrpc_params = aJson.getObjectItem(json_in_msg, "params");
+
+	//char *aJsonPtr; // For debug prints
+	//Serial.print("jsonrpc_params: ");	aJsonPtr = aJson.print(jsonrpc_params);	Serial.println(aJsonPtr); free(aJsonPtr); // So we don't have a memory leak
+
+	// Extract Optional Style
+	aJsonObject *jsonrpc_style = aJson.getObjectItem(jsonrpc_params, "style");
+	//Serial.print("jsonrpc_style: "); aJsonPtr = aJson.print(jsonrpc_style);	Serial.println(aJsonPtr); free(aJsonPtr); // So we don't have a memory leak
+	if (jsonrpc_style) {
+		if (!strcmp(jsonrpc_style->valuestring, "terse")) subscribe_verbose = true;
+		else subscribe_verbose = false;
+	}
+
+	// Extract Optional Updates
+	aJsonObject *jsonrpc_updates = aJson.getObjectItem(jsonrpc_params, "updates");
+	if (jsonrpc_updates) {
+		if (!strcmp(jsonrpc_updates->valuestring, "on_new")) subscribe_verbose = true;
+		else subscribe_verbose = false;
+	}
+
+	// Extract Optional Min Update Rate
+	aJsonObject *jsonrpc_min_rate = aJson.getObjectItem(jsonrpc_params, "min_update_ms");
+	//Serial.print("jsonrpc_min_rate: ");	aJsonPtr = aJson.print(jsonrpc_min_rate);	Serial.println(aJsonPtr); free(aJsonPtr); // So we don't have a memory leak
+	if (jsonrpc_min_rate) 	subscribe_min_update_ms = (uint32_t)jsonrpc_min_rate->valueint; 
+
+	// Extract Optional Max Update Rate
+	aJsonObject *jsonrpc_max_rate = aJson.getObjectItem(jsonrpc_params, "max_update_ms");
+	//Serial.print("jsonrpc_max_rate: "); aJsonPtr = aJson.print(jsonrpc_max_rate);	Serial.println(aJsonPtr); free(aJsonPtr); // So we don't have a memory leak
+	if (jsonrpc_max_rate) subscribe_max_update_ms = (uint32_t)jsonrpc_max_rate->valueint;
+
+	// Now some calculations based on https://sites.google.com/site/verticalprofilerupgrade/home/ControllerSoftware/ipc-specification
+	//
+	if ( subscribe_min_update_ms == __LONG_MAX__ && subscribe_max_update_ms == __LONG_MAX__) {
+		// Neither provided, set based on spec
+		subscribe_min_update_ms = max(subscribe_min_update_ms, (uint32_t)BROKER_MIN_UPDATE_RATE_MS);
+		subscribe_max_update_ms = subscribe_min_update_ms * 4; 
+	}
+	else {
+		// at least one parameter provided
+		if (subscribe_max_update_ms == __LONG_MAX__) {
+			// Only minimum provided
+			subscribe_min_update_ms = max(subscribe_min_update_ms, (uint32_t)BROKER_MIN_UPDATE_RATE_MS); // make minimum is big enough
+			subscribe_max_update_ms = subscribe_min_update_ms * 4; // set Max, This is the spec
+		}
+		else if (subscribe_min_update_ms == __LONG_MAX__) {
+			// Only maximum provided
+			subscribe_max_update_ms = max(subscribe_max_update_ms, (uint32_t)BROKER_MIN_UPDATE_RATE_MS); // make minimum is big enough
+			subscribe_min_update_ms = max(subscribe_max_update_ms / 4, (uint32_t)BROKER_MIN_UPDATE_RATE_MS); // set Min, This is the spec
+		}
+		else {
+			// both provided
+			// can't be less than broker minimum
+			subscribe_min_update_ms = max(subscribe_min_update_ms, (uint32_t)BROKER_MIN_UPDATE_RATE_MS);
+			subscribe_max_update_ms = max(subscribe_max_update_ms, subscribe_min_update_ms); // Max should be at least as big as min
+		}
+	}
+
+	// Now Extract data list
+	aJsonObject *jsonrpc_data = aJson.getObjectItem(jsonrpc_params, "data");
+
+
+	//Serial.print("jsonrpc_data: ");	aJsonPtr = aJson.print(jsonrpc_data);	Serial.println(aJsonPtr); free(aJsonPtr); // So we don't have a memory leak
+
+
+	// Start output
+	char statusBuffer[PARAM_BUFFER_SIZE]; // Should be plenty big to hold output for one parameter
+	uint16_t dataIdx = 0; // should never exceed PARAM_BUFFER_SIZE
+	Serial.print(F("{\"result\":{"));
+	// data will be list of parameters: ["Voltage","Vcc",Current_Load"]
+	// Now parse data list
+	if (jsonrpc_data) {
+		aJsonObject *jsonrpc_data_item = jsonrpc_data->child;
+		//Serial.print(jsonrpc_data_item->valuestring);
+		//printFreeRam("pBS data 1");
+		while (jsonrpc_data_item) {
+			bool found = false;
+			for (uint8_t broker_data_idx = 0; broker_data_idx < BROKERDATA_OBJECTS; broker_data_idx++) {
+				dataIdx = 0;
+				dataIdx += sprintf(statusBuffer + dataIdx, "\"%s\":{", jsonrpc_data_item->valuestring); // even if it's bad data
+				if (!strcmp(jsonrpc_data_item->valuestring, brokerobjs[broker_data_idx]->getName())) {
+					subscribe_matches_found++;
+					// Set subscription up
+					brokerobjs[broker_data_idx]->subscribe(subscribe_min_update_ms, subscribe_min_update_ms);
+					brokerobjs[broker_data_idx]->setSubOnChange(subscribe_on_change);
+					brokerobjs[broker_data_idx]->setVerbose(subscribe_verbose);
+					found = true;
+					dataIdx += sprintf(statusBuffer + dataIdx, "\"status\":\"ok\"},");
+					break; // break out of for loop
+				}
+			}
+			if ( found == false ) dataIdx += sprintf(statusBuffer + dataIdx, "\"status\":\"error\"},"); // There should be more to this, but that's all for now.
+			Serial.print(statusBuffer);
+			jsonrpc_data_item = jsonrpc_data_item->next; // Set pointer for jsonrpc_data_item to next item.
+		}
+	}
+	// Now finish output
+	// Should add update rates....
+	dataIdx = 0;
+	dataIdx += sprintf(statusBuffer + dataIdx, "\"max_update_rate\": %lu,", subscribe_max_update_ms);
+	dataIdx += sprintf(statusBuffer + dataIdx, "\"min_update_rate\": %lu,", subscribe_min_update_ms);
+	dataIdx += sprintf(statusBuffer + dataIdx, "},\"id\":%u}", json_id);
+	Serial.println(statusBuffer);
+	return subscribe_matches_found;
+}
+
+void genereateSubscribeMessage() {
+	// Generates response to subscribe message
 }
 
 void clearDataMap() {
 	for (uint8_t i = 0; i < BROKERDATA_OBJECTS; i++) {
-		::data_map[i] = 0;
+		::data_map[i] = false;
 	}
 }
 
@@ -371,27 +543,36 @@ bool processSerial() {
 	}
 
 	if (serial_stream.available()) {
-		Serial.println(F("DATA  FOUND!"));
+		//Serial.println(F("DATA  FOUND!"));
 		uint8_t message_type;
 		aJsonObject *serial_msg = aJson.parse(&serial_stream);
 		printFreeRam("pSer s_msg");
 		
 		if (serial_msg != NULL) {
-			//Serial.println(F("PROCESSING MESSAGE!"));
-			Serial.print(F("AMsg: ")); aJson.print(serial_msg, &serial_stream); Serial.println();
+			/*
+			Serial.println(F("PROCESSING MESSAGE!"));
+			Serial.print(F("AMsg: ")); 
+			char *aJsonPtr = aJson.print(serial_msg); 
+			Serial.println(aJsonPtr);
+			free(aJsonPtr); // So we don't have a memory leak
+			*/
 			message_type = getMessageType(&serial_msg);
-			printFreeRam("pSer 1");
+			printFreeRam("pSer gMT");
+			//printFreeRam("pSer 1");
 			switch (message_type) {
 				case (BROKER_STATUS): // Get status of items listed in jsonrpc_params
 					if (processBrokerStatus(serial_msg)) {
-						printFreeRam("pSer 2");
-						aJson.deleteItem(serial_msg); // done with incoming message
-						printFreeRam("pSer 3");
+						printFreeRam("pSer status");
 						generateStatusMessage();
 					}
 					break;
-				case (BROKER_SUBSCRIBE): break;
-				case (BROKER_UNSUBSCRIBE): break;
+				case (BROKER_SUBSCRIBE): 
+					processBrokerSubscribe(serial_msg);
+					printFreeRam("pSer sub");
+					break;
+				case (BROKER_UNSUBSCRIBE): 
+					processBrokerUnubscribe(serial_msg); 
+					break;
 				case (BROKER_SET): break;
 				case (BROKER_LIST_DATA): break;
 			}
@@ -404,18 +585,21 @@ bool processSerial() {
 			aJson.addItemToObject(error, "code", aJson.createItem(-32700));
 			aJson.addItemToObject(error, "message", aJson.createItem("Parse error."));
 			aJson.addItemToObject(response, "error", error);
-			aJson.print(response, &serial_stream);
+			//aJson.print(response, &serial_stream); // Memory Leak?
 			aJson.deleteItem(error);
 			aJson.deleteItem(response);
 		}
 		serial_stream.flush(); // No longer need data
-		printFreeRam("pSer near end 3");
-		if (serial_msg) aJson.deleteItem(serial_msg); // done with incoming message
-		printFreeRam("pSer end 3");
+		//printFreeRam("pSer near end 3");
+		if (serial_msg) {
+			//Serial.println(F("Deleting serial_msg"));
+			aJson.deleteItem(serial_msg); // done with incoming message
+		}
+		//printFreeRam("pSer end 3");
 		return true;
 	}
 	else {
-		Serial.println(F("NO DATA FOUND"));
+		//Serial.println(F("NO DATA FOUND"));
 		return false;
 	}
 

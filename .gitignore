@@ -6,3 +6,4 @@ Release/
 src/
 Debug/
 *.tmp
+old/

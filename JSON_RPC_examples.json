@@ -1,15 +1,15 @@
 Example JSON requests:
 
-{"method" : "status", "params" : {"data":["Voltage", "Vcc","Load_Current"],"style":"verbose"},"id" : 10}
+{"method" : "status", "params" : {"data":["Voltage", "Vcc","Load_Power"],"style":"verbose"},"id" : 10}
 
 
 {"method" : "status", "params" : {"data":["Voltage", "Vcc"],"style":"terse"},"id" : 13}
 
 
-{"method" : "subscribe", "params" : {"data":["Voltage", "Vcc"],"style":"terse","updates":"on_change","min_update_rate":1000},"id" : 14}
+{"method" : "subscribe", "params" : {"data":["Voltage", "Vcc"],"style":"terse","updates":"on_change","min_update_ms":4000},"id" : 14}
 
 
-{"method" : "subscribe", "params" : {"data":["Load_Current", "Charge_Current"],"style":"verbose","updates":"on_new","min_update_rate":5000},"id" : 15}
+{"method" : "subscribe", "params" : {"data":["Load_Current", "Charge_Current"],"style":"verbose","updates":"on_new","min_update_ms":5000,"max_update_ms":15000},"id" : 15}
 
 
 {"method" : "unsubscribe", "params" : {"data":["Load_Current", "Charge_Current"]},"id" : 16}

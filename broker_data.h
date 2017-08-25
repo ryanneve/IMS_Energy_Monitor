@@ -10,10 +10,11 @@ public:
 	BrokerData(const char *name, const char *unit,bool ro) {
 		strncpy(_data_name, name, BROKER_DATA_NAME_LENGTH);
 		strncpy(_data_unit, unit, BROKER_DATA_UNIT_LENGTH);
-		_subscription_rate = 0;
+		_subscription_rate_ms = 0; // 0  is not subscribed
 		_last_sample_time = 0;
 		_subscription_time = 0;
 		_sub_verbose = true;
+		_sub_on_change = true;
 		_data_value = NAN;
 		_data_max = NAN;
 		_data_min = NAN;
@@ -26,11 +27,16 @@ public:
 	void	resetMax() { _data_max = NAN; }
 	const char	*getName() { return _data_name; }
 	const char	*getUnit() { return _data_unit; }
-	void	subscribe(uint8_t sub_rate_s) { _subscription_rate = sub_rate_s;}
-	void	unsubscribe() { _subscription_rate = 0; _subscription_time = 0; }
-	bool	isSubscribed() { return (bool)_subscription_rate; }
+	void	subscribe(uint32_t sub_min_rate_ms, uint32_t sub_max_rate_ms) {
+		_subscription_rate_ms = sub_min_rate_ms; 
+		_subscription_max_ms = sub_max_rate_ms;
+	}
+	void	setSubOnChange(bool on_change) { _sub_on_change = on_change; }
+	void	subscribe(uint32_t sub_rate_ms) { subscribe(sub_rate_ms,0);} // _subscription_max_ms defaults to 0 
+	void	unsubscribe() { _subscription_rate_ms = 0; _subscription_time = 0; }
+	bool	isSubscribed() { return (bool)_subscription_rate_ms; }
 	bool	subscriptionDue();
-	uint8_t		getSubscriptionRate() { return _subscription_rate; }
+	uint32_t		getSubscriptionRate() { return _subscription_rate_ms; }
 	void		setSubscriptionTime() { _subscription_time = millis(); } // Called when subscription is generated.
 	void		setVerbose(bool verbose) { _sub_verbose = verbose; }
 	bool		isVerbose() { return _sub_verbose; }
@@ -47,12 +53,14 @@ protected:
 private:
 	char	_data_name[BROKER_DATA_NAME_LENGTH];
 	char	_data_unit[BROKER_DATA_UNIT_LENGTH];
-	uint8_t	_subscription_rate; // in seconds
+	uint32_t	_subscription_rate_ms; // in milli-seconds
+	uint32_t	_subscription_max_ms; // Used on-change
 	uint32_t	_subscription_time;	// Time of last subscription message
 	bool		_data_changed;	// Set to true when data changes and to false when new value is reported in subscription
 	uint32_t	_last_sample_time;	// Time of last sample
 	bool	_sub_verbose;
-	bool	_ro;	// Read Only?
+	bool	_sub_on_change; // report only new values when True
+	bool	_ro;	// Read Only
 };
 
 /*
