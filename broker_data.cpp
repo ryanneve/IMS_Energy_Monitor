@@ -9,21 +9,32 @@
 
 
 
-void BrokerData::subscribe(uint32_t sub_min_rate_ms, uint32_t sub_max_rate_ms) {
+void DynamicData::subscribe(uint32_t sub_min_rate_ms, uint32_t sub_max_rate_ms) {
 	_subscription_rate_ms = sub_min_rate_ms;
 	_subscription_max_ms = sub_max_rate_ms;
 	_subscription_time = 0; // Should sync items already subscribed.
 }
 
 
-bool BrokerData::subscriptionDue() {
-	// Used to determine if it's time to report a subscription
+bool DynamicData::subscriptionDue() {
+	/* Used to determine if it's time to report a subscription*/
+	bool report_value = false;
 	if (_subscription_rate_ms == 0) return false; // Not subscribed
-	if ((millis() - _subscription_time) > _subscription_rate_ms) return true;
-	return false;
+	else { // subscribed
+		if (isOnChange()) {
+			// only report if value has changed or we have exceeded _subscription_max_ms
+			if (_data_changed && ((millis() - _subscription_time) > _subscription_rate_ms)) report_value = true;
+			else if ((millis() - _subscription_time) > _subscription_max_ms) report_value =  true;
+		}
+		else { // it's "on new", so it's purely time based.
+			if ((millis() - _subscription_time) > _subscription_rate_ms) report_value = true;
+		}
+	}
+	if (report_value) _data_changed = false; // indicate that this value has been reported via subscription
+	return report_value;
 }
 
-uint32_t BrokerData::_getTimeDelta() {
+uint32_t DynamicData::_getTimeDelta() {
 	// Records current sample time, and returns time since last sample in ms.
 	uint32_t current_sample_time = millis();
 	// Works with millis() roll over since we are using unsigned long
@@ -33,7 +44,7 @@ uint32_t BrokerData::_getTimeDelta() {
 }
 
 
-uint8_t BrokerData::_checkMinMax() {
+uint8_t DynamicData::_checkMinMax() {
 	//Checks if there is a new min and max. Returns:
 	// 0 = no changes
 	// 1 = New min
@@ -53,12 +64,19 @@ uint8_t BrokerData::_checkMinMax() {
 	return newMinMax;
 }
 
-bool BrokerData::_setDataValue(double new_value) {
+bool StaticData::setData(double new_value) {
+	_data_value = new_value;
+	return true;
+
+}
+bool DynamicData::_setDataValue(double new_value) {
+	// See if value has changed.
 	if (new_value == _data_value) {
 		return false;
 	}
 	else {
 		_data_value = new_value;
+		_data_changed = true;
 		return true;
 	}
 
@@ -101,12 +119,25 @@ double	CurrentData::getData() {
 double VoltageData::getData() {
 	//method returns voltage in volts
 	uint16_t voltage_mV = getADCreading();
+	voltage_mV *= _v_div();
+	// May want to check if data seems valid 
+	_setDataValue((double)voltage_mV / 1000.0);
+	_checkMinMax();
+	return _data_value;
+}
+
+
+double VoltageData2::getData() {
+	//method returns voltage in volts
+	uint16_t voltage_mV = getADCreading();
+	double _v_div = (_h_div->getData() + _l_div->getData())/ _l_div->getData();
 	voltage_mV *= _v_div;
 	// May want to check if data seems valid 
 	_setDataValue((double)voltage_mV / 1000.0);
 	_checkMinMax();
 	return _data_value;
 }
+
 
 double PowerData::getData() {
 	// Power is voltage times current. We have _voltage and _current.
