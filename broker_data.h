@@ -1,3 +1,7 @@
+
+
+#ifndef _BROKER_DATA_h
+#define _BROKER_DATA_h
 #include "ADS1115.h"
 
 #define BROKER_DATA_NAME_LENGTH 15
@@ -12,10 +16,10 @@ public:
 		strncpy(_data_unit, unit, BROKER_DATA_UNIT_LENGTH);
 		_ro = ro;
 	};
-	double	getValue() { return _data_value; }
 	const char	*getName() { return _data_name; }
 	const char	*getUnit() { return _data_unit; }
 	bool		isRO() { return _ro; }
+	char *	getSplTimeStr() { return _last_sample_time_str; }
 	// virtual methods
 	virtual bool	subscriptionDue() { return false; }
 	virtual bool	isVerbose() { return false; }
@@ -30,12 +34,14 @@ public:
 	virtual void	resetMin() {};
 	virtual void	resetMax() {};
 	// Pure virtual methods
+	virtual double	getValue() = 0;
 	virtual double getData() = 0;
 	virtual bool setData(double set_value) = 0;
 
 protected:
 	bool	_dynamic;
 	double	_data_value;
+	char	_last_sample_time_str[15]; // string representing time of last sample
 private:
 	char	_data_name[BROKER_DATA_NAME_LENGTH];
 	char	_data_unit[BROKER_DATA_UNIT_LENGTH];
@@ -54,6 +60,7 @@ public:
 	}
 	double	getData() {return getValue();}
 	bool setData(double set_value);
+	double	getValue() { return _data_value; }
 protected:
 private:
 };
@@ -101,8 +108,8 @@ protected:
 private:
 	uint32_t	_subscription_rate_ms; // in milli-seconds
 	uint32_t	_subscription_max_ms; // Used on-change
-	uint32_t	_subscription_time;	// Time of last subscription message
-	uint32_t	_last_sample_time;	// Time of last sample
+	uint32_t	_subscription_time;	// Time of last subscription message from millis()
+	uint32_t	_last_sample_time;	// Time of last sample from millis()
 	bool		_data_changed;	// Set to true when data changes and to false when new value is reported in subscription
 	bool	_sub_verbose;	// is this parameter's subscription verbose or terse?
 	bool	_sub_on_change; // report only new values when True
@@ -122,6 +129,7 @@ public:
 	}
 	uint16_t getADCreading();
 	uint8_t	getChannel() { return _channel; }
+	double	getValue() { return _data_value; }
 protected:
 	ADS1115	*_ads;
 private:
@@ -145,6 +153,7 @@ private:
 	double	_high_div;
 	double	_low_div;
 };
+/*
 class VoltageData2 : public ADCData {
 public:
 	VoltageData2(const char *name, ADS1115 &ads, uint8_t ADCchannel, StaticData &high_div, StaticData &low_div) : ADCData(name, "V", ads, ADCchannel) {
@@ -158,7 +167,7 @@ private:
 	StaticData *_l_div;
 	//double	_v_div() { return (_high_div + _low_div) / _low_div; }
 };
-
+*/
 
 
 
@@ -191,6 +200,7 @@ public:
 	double	getData();	// Calculates new Power based on most recent current and voltage
 	bool	setData(double set_value);
 	void	resetData();
+	double	getValue() { return _data_value; }
 private:
 	CurrentData	*_current;
 	VoltageData	*_voltage;
@@ -207,6 +217,24 @@ public:
 	double getData(); // Calculates new Energy based on most recent power
 	bool	setData(double energy_value);	// Used for setting value, usually after reboot.
 	bool	resetData() { return setData(0);}
+	double	getValue() { return _data_value; }
 private:
 	PowerData	*_power;
 };
+/*Holds a date or a time. Figures out which based on value and acts accordingly*/
+class TimeData : public DynamicData{
+public:
+	TimeData(const char *name, bool is_a_date) :DynamicData(name, (is_a_date?"CCYYMMDD":"HHmmss"), false) {
+		_is_date = is_a_date;
+	}
+	double getData();
+	double getValue() { return getData(); }
+	bool setData(double date_or_time);
+private:
+	bool _is_date;
+};
+
+
+void getSampleTimeStr(char *splTimeStr);
+
+#endif

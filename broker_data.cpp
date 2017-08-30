@@ -1,5 +1,6 @@
 
 #include <Arduino.h>
+#include <timelib.h>
 #include "ADS1115.h"
 #include "broker_data.h"
 //// Define Objects
@@ -40,6 +41,7 @@ uint32_t DynamicData::_getTimeDelta() {
 	// Works with millis() roll over since we are using unsigned long
 	uint32_t time_delta = current_sample_time - _last_sample_time;
 	_last_sample_time = current_sample_time;
+	getSampleTimeStr(_last_sample_time_str);
 	return time_delta;
 }
 
@@ -66,6 +68,7 @@ uint8_t DynamicData::_checkMinMax() {
 
 bool StaticData::setData(double new_value) {
 	_data_value = new_value;
+	getSampleTimeStr(_last_sample_time_str);
 	return true;
 
 }
@@ -77,6 +80,8 @@ bool DynamicData::_setDataValue(double new_value) {
 	else {
 		_data_value = new_value;
 		_data_changed = true;
+		getSampleTimeStr(_last_sample_time_str);
+		_last_sample_time = millis();
 		return true;
 	}
 
@@ -126,7 +131,7 @@ double VoltageData::getData() {
 	return _data_value;
 }
 
-
+/*
 double VoltageData2::getData() {
 	//method returns voltage in volts
 	uint16_t voltage_mV = getADCreading();
@@ -137,7 +142,7 @@ double VoltageData2::getData() {
 	_checkMinMax();
 	return _data_value;
 }
-
+*/
 
 double PowerData::getData() {
 	// Power is voltage times current. We have _voltage and _current.
@@ -174,6 +179,68 @@ bool EnergyData::setData(double power_Wh) {
 	return true;
 }
 
+
+double TimeData::getData() {
+	double data_out;
+	if (_is_date) {
+		data_out = (double)year() * 10000;
+		data_out += ((double)month() * 100);
+		data_out += (double)day();
+	}
+	else {
+		data_out = (double)(hour()) * 10000;
+		data_out += (double)(minute()) * 100;
+		data_out += (double)(second());
+	}
+	_data_value = data_out;
+	return _data_value;
+}
+
+bool TimeData::setData(double date_or_time) {
+	/* date_or_time format is ccyymmdd or hhmmss
+	Could probably check for valid values before setting.
+	*/
+	//Serial.print("Processing: "); Serial.println((uint32_t)date_or_time);
+	uint16_t ccyy;
+	uint8_t MM, DD, HH, mm, ss;
+	_data_value = date_or_time;
+	if (_is_date) {
+		// it's a date
+		ccyy = date_or_time/10000;
+		date_or_time -= (ccyy * 10000);
+		MM = date_or_time / 100;
+		DD = date_or_time - (MM * 100);
+		HH = hour();
+		mm = minute();
+		ss = second();
+	}
+	else {
+		// it's a time
+		ccyy = year();
+		MM = month();
+		DD = day();
+		HH = date_or_time / 10000;
+		date_or_time -= (HH * 10000);
+		mm = date_or_time / 100;
+		ss = date_or_time - (mm * 100);
+	}
+	//Serial.print("CCYY: "); Serial.println(ccyy);
+	//Serial.print("MM: "); Serial.println(MM);
+	//Serial.print("DD: "); Serial.println(DD);
+	//Serial.print("HH: "); Serial.println(HH);
+	//Serial.print("mm: "); Serial.println(mm);
+	//Serial.print("ss: "); Serial.println(ss);
+	setTime(HH, mm, ss, DD, MM, ccyy);
+	return true;
+}
+
+
+
+void getSampleTimeStr(char splTimeStr[15]) { // CCYYMMDDHHmmss\0
+	/* Set date_time string to current date and time
+	*/
+	snprintf(splTimeStr, 15,"%4u%02u%02u%02u%02u%02u", year(), month(), day(), hour(), minute(), second());
+}
 
 /*
 

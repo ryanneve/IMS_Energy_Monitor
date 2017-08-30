@@ -41,6 +41,8 @@ TO DO
 	- Make resistor values setable and store them in EEPROM.
 */
 
+#include <timelib.h>
+#include "E_Mon.h"
 #include "ADS1115.h"
 // include the aJSON library
 #include <aJSON.h>
@@ -59,7 +61,7 @@ TO DO
 #define ADC_CHANNEL_CHARGE_CURRENT	1
 #define ADC_CHANNEL_VOLTAGE	2
 #define ADC_CHANNEL_VCC	3
-#define BROKERDATA_OBJECTS 10
+#define BROKERDATA_OBJECTS 12
 #define BROKER_MIN_UPDATE_RATE_MS 500
 #define PARAM_BUFFER_SIZE  200 // should be >~100
 
@@ -69,30 +71,32 @@ const uint16_t LOOP_DELAY_TIME_MS = 2000;	// Time in ms to wait between sampling
 const uint8_t STATVALWIDTH = 5;	// Used for converting double to string
 const uint8_t STATVALPREC = 3;	// Used for converting double to string
 
+
+
 // Define Objects
 ADS1115 ads(ADS1115_ADDRESS);
+aJsonStream serial_stream(&Serial);
 
 // Someday we might load all this from EEPROM so that the code can be as generic as possible.
 StaticData	volt_div_low("V_div_low", "Ohms", V_DIV_LOW);
 StaticData	volt_div_high("V_div_high", "Ohms", V_DIV_HIGH);
-VoltageData2 v_batt2("Voltage", ads, ADC_CHANNEL_VOLTAGE, volt_div_high, volt_div_low);
-VoltageData v_batt("Voltage", ads, ADC_CHANNEL_VOLTAGE, V_DIV_HIGH,V_DIV_LOW);
+//VoltageData2 v_batt2("Voltage", ads, ADC_CHANNEL_VOLTAGE, volt_div_high, volt_div_low);
+VoltageData v_batt("Voltage", ads, ADC_CHANNEL_VOLTAGE, V_DIV_HIGH, V_DIV_LOW);
 VoltageData v_cc("Vcc", ads, ADC_CHANNEL_VCC, 0, 1);	// No voltage divider
 CurrentData	current_l("Load_Current", ads, v_cc, ADC_CHANNEL_LOAD_CURRENT, ACS715_mV_per_A);
 CurrentData	current_c("Charge_Current", ads, v_cc, ADC_CHANNEL_CHARGE_CURRENT, ACS715_mV_per_A);
-PowerData	power_l("Load_Power",current_l,v_batt);
-PowerData	power_c("Charge_Power",current_c,v_batt);
+PowerData	power_l("Load_Power", current_l, v_batt);
+PowerData	power_c("Charge_Power", current_c, v_batt);
 EnergyData	energy_l("Load_Energy", power_l);
-EnergyData	energy_c("Charge_Energy",power_c);
+EnergyData	energy_c("Charge_Energy", power_c);
+TimeData	date_sys("Date_UTC",true);
+TimeData	time_sys("Time_UTC",false);
+// Now an array to hold above objects as their base class.
 BrokerData *brokerobjs[BROKERDATA_OBJECTS];
 
-//TargetController jsonController(&Serial);
-
-aJsonStream serial_stream(&Serial);
 
 
 // Global variables
-
 int16_t	json_id = 0;
 bool status_verbose = true; // true is default.
 bool data_map[BROKERDATA_OBJECTS]; // Used to mark broker objects we are interested in.
@@ -100,6 +104,8 @@ bool data_map[BROKERDATA_OBJECTS]; // Used to mark broker objects we are interes
 // Constants
 const char ON_NEW[] = "on_new";
 const char ON_CHANGE[] = "on_change";
+const char TZ[] = "UTC"; // Time zone is forced to UTC for now.
+
 const uint8_t JSON_REQUEST_COUNT = 7; // How many different request types are there.
 enum json_r_t {
 	BROKER_STATUS = 0,
@@ -113,6 +119,8 @@ enum json_r_t {
 const char *REQUEST_STRINGS[JSON_REQUEST_COUNT] = { "status","subscribe","unsubscribe","set","list_data","reset","" };
 
 void setup() {
+	// set the Time library to use Teensy 3.0's RTC to keep time
+	setSyncProvider(getTeensy3Time);
     Wire.begin();
 	Serial.begin(57600);	//USB
 	//Serial1.begin(57600);	// PINS
@@ -130,7 +138,13 @@ void setup() {
 	// Note that any analog input must be higher than �0.3V and less than VDD +0.3
 	ads.setGain(ADS1115_PGA_6P144);
 
-	brokerobjs[0] = &v_batt2;
+	if (timeStatus() != timeSet) {
+		Serial.println("Unable to sync with the RTC");
+	}
+	else {
+		Serial.println("RTC has set the system time");
+	}
+	brokerobjs[0] = &v_batt;
 	brokerobjs[1] = &v_cc;
 	brokerobjs[2] = &current_l;
 	brokerobjs[3] = &current_c;
@@ -140,11 +154,18 @@ void setup() {
 	brokerobjs[7] = &energy_c;
 	brokerobjs[8] = &volt_div_low;
 	brokerobjs[9] = &volt_div_high;
+	brokerobjs[10] = &date_sys;
+	brokerobjs[11] = &time_sys;
+
+	//datetime.subscribe(1000, 100000);
+	//datetime.setSubOnChange(false);
+	//datetime.setVerbose(false);
 }
 
 void loop()
 {
 	printFreeRam("loop0");
+	//datetime.getData(); // Update clock values.
 	// Process incoming messages
 	processSerial();
 	// CHECK IF WE GOT A RESET MESSAGE
@@ -194,7 +215,7 @@ void processSubscriptions() {
 	//printFreeRam("pSub start");
 	// This should be a function .
 	uint8_t sub_idx = 0;
-	aJsonObject *json_root, *json_params;
+	aJsonObject *json_root, *json_params, *json_msgtime;
 	aJsonObject *jsondataobjs[BROKERDATA_OBJECTS]; // Holds objects used for data output
 	json_root = aJson.createObject();
 	aJson.addItemToObject(json_root, "method", aJson.createItem("subscription"));
@@ -213,7 +234,11 @@ void processSubscriptions() {
 			sub_idx++;
 		}
 	}
-	aJson.addItemToObject(json_root, "message_time", aJson.createItem((unsigned long)millis()));
+	aJson.addItemToObject(json_root, "message_time", json_msgtime = aJson.createObject());
+	char msgTime[15];
+	getSampleTimeStr(msgTime);
+	aJson.addStringToObject(json_msgtime, "value", msgTime); // THIS REALLY SHOULD BE AN INTEGER, but aJson doesn't support uint64_t which would hold an integer this big.
+	aJson.addStringToObject(json_msgtime, "units", TZ);
 	//Serial.print(F("JSON string:"));
 	char * aJsonPtr = aJson.print(json_root);
 	Serial.println(aJsonPtr); // Prints out subscription message
@@ -273,6 +298,18 @@ uint16_t getMessageType(aJsonObject** json_in_msg) {
 	return json_method;
 }
 
+
+uint16_t addMsgTime(char *stat_buff, uint16_t  d_idx) {
+	char msgTime[15];
+	getSampleTimeStr(msgTime);
+	d_idx += sprintf(stat_buff + d_idx, ",\"message_time\":{\"value\":%s,\"units\":\"%s\"}", msgTime, TZ);
+	return d_idx;
+}
+
+uint16_t addMsgId(char *stat_buff, uint16_t  d_idx) {
+	d_idx += sprintf(stat_buff + d_idx, "},\"id\":%u}", json_id);
+	return d_idx;
+}
 uint8_t processBrokerStatus(aJsonObject *json_in_msg) {
 	//printFreeRam("pBS start");
 	uint8_t status_matches_found = 0;
@@ -325,22 +362,31 @@ void generateStatusMessage() {
     "id" : 1
 	}*/
 	bool first = true;
-	Serial.print(F("\"result\":{"));
+	Serial.print(F("{\"result\":{"));
 	char statusBuffer[PARAM_BUFFER_SIZE]; // Should be plenty big to hold output for one parameter
 
 	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
 		if (::data_map[obj_no] == true) {
-			char statusValue[10] = "-999"; // Holds status double value as a string
-			dtostrf((double)brokerobjs[obj_no]->getValue(), STATVALWIDTH, STATVALPREC, statusValue); // convert (double) statusValue to string
+			char statusValue[20] = "-999"; // Holds status double value as a string
+			// Need to do a decent conversion based on data.
+			uint8_t s_width = STATVALWIDTH;
+			uint8_t s_prec = STATVALPREC;
+			double brokerValue = brokerobjs[obj_no]->getValue();
+			if (brokerValue > (pow(10, s_width))) { // This handles dates which are CCYYMMDD and times (HHmmss).
+				s_prec = 0;
+				s_width =  8;
+			}
+			dtostrf(brokerValue, s_width, s_prec, statusValue); // convert (double) statusValue to string
 			if (!first) dataIdx += sprintf(statusBuffer + dataIdx, ","); // preceding comma
 			dataIdx += sprintf(statusBuffer + dataIdx, "\"%s\":{", brokerobjs[obj_no]->getName());
 			dataIdx += sprintf(statusBuffer + dataIdx, "\"value\":%s", statusValue);
 			if (::status_verbose == true) {
 				dataIdx += sprintf(statusBuffer + dataIdx, ",\"units\":\"%s\"", brokerobjs[obj_no]->getUnit());
-				dtostrf((double)brokerobjs[obj_no]->getMin(), STATVALWIDTH, STATVALPREC, statusValue); // convert (double) statusMin to string
+				dtostrf((double)brokerobjs[obj_no]->getMin(), s_width, s_prec, statusValue); // convert (double) statusMin to string
 				dataIdx += sprintf(statusBuffer + dataIdx, ",\"min\":%s", statusValue);
-				dtostrf((double)brokerobjs[obj_no]->getMax(), STATVALWIDTH, STATVALPREC, statusValue); // convert (double) statusMin to string
+				dtostrf((double)brokerobjs[obj_no]->getMax(), s_width, s_prec, statusValue); // convert (double) statusMin to string
 				dataIdx += sprintf(statusBuffer + dataIdx, ",\"max\":%s", statusValue);
+				dataIdx += sprintf(statusBuffer + dataIdx, ",\"sample_time\":%s", brokerobjs[obj_no]->getSplTimeStr());
 			}
 			dataIdx += sprintf(statusBuffer + dataIdx, "}");
 			Serial.print(statusBuffer);
@@ -348,11 +394,15 @@ void generateStatusMessage() {
 			first = false;
 		}
 	}
-	dataIdx = 0;
-	dataIdx += sprintf(statusBuffer + dataIdx, "},\"id\":%u}", json_id);
+	dataIdx = addMsgTime(statusBuffer, dataIdx);
+	dataIdx = addMsgId(statusBuffer, dataIdx);
 	Serial.println(statusBuffer);
 	//printFreeRam("gSM end");
 }
+
+
+
+
 
 uint8_t processBrokerUnubscribe(aJsonObject *json_in_msg) {
 	/*Processes an un-subscribe message
@@ -398,8 +448,7 @@ uint8_t processBrokerUnubscribe(aJsonObject *json_in_msg) {
 	}
 	// Now finish output
 	// Should add update rates....
-	dataIdx = 0;
-	dataIdx += sprintf(statusBuffer + dataIdx, "},\"id\":%u}", json_id);
+	dataIdx = addMsgId(statusBuffer, 0);
 	Serial.println(statusBuffer);
 	return unsubscribe_matches_found;
 }
@@ -526,7 +575,9 @@ uint8_t processBrokerSubscribe(aJsonObject *json_in_msg) {
 	dataIdx += sprintf(statusBuffer + dataIdx, ",\"max_update_rate\":%lu", subscribe_max_update_ms);
 	dataIdx += sprintf(statusBuffer + dataIdx, ",\"min_update_rate\":%lu", subscribe_min_update_ms);
 	dataIdx += sprintf(statusBuffer + dataIdx, ",\"updates\":\"%s\"", subscribe_on_change?ON_CHANGE:ON_NEW); //ON_NEW ON_CHANGE
-	dataIdx += sprintf(statusBuffer + dataIdx, "},\"id\":%u}", json_id);
+	Serial.println(statusBuffer);
+	dataIdx = addMsgTime(statusBuffer, 0);
+	dataIdx = addMsgId(statusBuffer, dataIdx);
 	Serial.println(statusBuffer);
 	return subscribe_matches_found;
 }
@@ -547,11 +598,7 @@ uint8_t processSet(aJsonObject *json_in_msg) {
 		dataIdx = 0;
 		aJsonObject *jsonrpc_set_param = aJson.getObjectItem(jsonrpc_params, brokerobjs[broker_data_idx]->getName());
 		if (jsonrpc_set_param) {
-			//// Found one!
-
-
-			
-			//Serial.print(F("Found one! "));
+			// Found one!
 			//Serial.println(broker_data_idx);
 			//char *aJsonPtr = aJson.print(jsonrpc_set_param);
 			//Serial.println(aJsonPtr);
@@ -560,10 +607,13 @@ uint8_t processSet(aJsonObject *json_in_msg) {
 
 
 			if (!first) dataIdx += sprintf(statusBuffer + dataIdx, ","); // preceding comma
-			dataIdx += sprintf(statusBuffer + dataIdx, "\"%s\":{\"status\":", brokerobjs[broker_data_idx]->getName());
+			dataIdx += sprintf(statusBuffer + dataIdx, "\"%s\":{\"status\":", brokerobjs[broker_data_idx]->getName()); // name of parameter and status...
 			if (!brokerobjs[broker_data_idx]->isRO()) {
 				// Settable
-				double setValue = jsonrpc_set_param->valuefloat;
+				double setValue = -999;
+				if (jsonrpc_set_param->type == aJson_Int) setValue = (double)jsonrpc_set_param->valueint;
+				else if (jsonrpc_set_param->type == aJson_Long) setValue = (double)jsonrpc_set_param->valuelong;
+				else if (jsonrpc_set_param->type == aJson_Float) setValue = (double)jsonrpc_set_param->valuefloat;
 				bool success = brokerobjs[broker_data_idx]->setData((double)setValue);
 				if (success) {
 					dataIdx += sprintf(statusBuffer + dataIdx, "\"ok\"}");
@@ -582,8 +632,8 @@ uint8_t processSet(aJsonObject *json_in_msg) {
 	}
 	// Now finish output
 	// Should add update rates....
-	dataIdx = 0;
-	dataIdx += sprintf(statusBuffer + dataIdx, "},\"id\":%u}", json_id);
+	dataIdx = addMsgTime(statusBuffer, 0);
+	dataIdx = addMsgId(statusBuffer, dataIdx);
 	Serial.println(statusBuffer);
 	return parameters_set;
 }
@@ -610,8 +660,7 @@ void processListData() {
 		dataIdx = 0;
 		first = false;
 	}
-	dataIdx = 0;
-	dataIdx += sprintf(statusBuffer + dataIdx, "},\"id\":%u}", json_id);
+	dataIdx = addMsgId(statusBuffer, 0);
 	Serial.println(statusBuffer);
 }
 
@@ -658,17 +707,12 @@ uint8_t processReset(aJsonObject *json_in_msg) {
 		Serial.print(statusBuffer);
 		jsonrpc_data_item = jsonrpc_data_item->next; // Set pointer for jsonrpc_data_item to next item.
 	}
-	dataIdx = 0;
-	dataIdx += sprintf(statusBuffer + dataIdx, "},\"id\":%u}", json_id);
+	dataIdx = addMsgTime(statusBuffer, 0);
+	dataIdx = addMsgId(statusBuffer, dataIdx);
 	Serial.println(statusBuffer);
 	return reset_matches_found;
 }
 
-
-
-void genereateSubscribeMessage() {
-	// Generates response to subscribe message
-}
 
 void clearDataMap() {
 	for (uint8_t i = 0; i < BROKERDATA_OBJECTS; i++) {
@@ -723,8 +767,7 @@ bool processSerial() {
 					break;
 				case (BROKER_RESET):
 					processReset(serial_msg);
-					break;
-					
+					break;			
 			}
 		}
 		else {
@@ -758,4 +801,9 @@ bool processSerial() {
 const char * BoolToString(const bool b)
 {
 	return b ? "true" : "false";
+}
+
+time_t getTeensy3Time()
+{
+	return Teensy3Clock.get();
 }
