@@ -12,7 +12,7 @@
 
 * Runs on [Teensy 3.1/3.2](https://www.pjrc.com/store/teensy32.html). Communicates via USB.
 * [Communications Specification](https://sites.google.com/site/verticalprofilerupgrade/home/ControllerSoftware/ipc-specification)
-* uses aJson library ([original](https://github.com/interactive-matter/aJson)) or ([my fork])(https://github.com/ryanneve/aJson))
+* uses aJson library ([original](https://github.com/interactive-matter/aJson)) or ([my fork](https://github.com/ryanneve/aJson))
 
 ### Who do I talk to? ###
 
