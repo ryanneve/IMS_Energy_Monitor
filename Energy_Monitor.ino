@@ -42,15 +42,9 @@ TO DO
 */
 
 #include <timelib.h>
+#include <aJSON.h>
 #include "E_Mon.h"
 #include "ADS1115.h"
-// include the aJSON library
-#include <aJSON.h>
-// include the JsonRPC library
-//#include <JsonRPCServer.h>
-// this includes all functions relating to specific JSON messahe parsing and generation.
-//#include "Energy_JSON.h"
-// data objects
 #include "broker_data.h"
 
 
@@ -126,7 +120,7 @@ void setup() {
 	//Serial1.begin(57600);	// PINS
 	while (!Serial);	// Leonardo seems to need this
 	//while (!Serial1);	// Leonardo seems to need this
-	Serial.println(F("IMS Power Monitor"));
+	Serial.println(F("UNC-IMS Power Monitor"));
 	delay(3000);
 	Serial.println(ads.testConnection() ? F("ADS1115 connected") : F("ADS1115  failed"));
 	ads.initialize();
@@ -144,6 +138,7 @@ void setup() {
 	else {
 		Serial.println("RTC has set the system time");
 	}
+	// Add parameter objects to brokerobjs[]
 	brokerobjs[0] = &v_batt;
 	brokerobjs[1] = &v_cc;
 	brokerobjs[2] = &current_l;
@@ -156,10 +151,6 @@ void setup() {
 	brokerobjs[9] = &volt_div_high;
 	brokerobjs[10] = &date_sys;
 	brokerobjs[11] = &time_sys;
-
-	//datetime.subscribe(1000, 100000);
-	//datetime.setSubOnChange(false);
-	//datetime.setVerbose(false);
 }
 
 void loop()
@@ -168,10 +159,9 @@ void loop()
 	//datetime.getData(); // Update clock values.
 	// Process incoming messages
 	processSerial();
-	// CHECK IF WE GOT A RESET MESSAGE
 	//DEBUG START
-	// Get data
 	/*
+	// Get data
 	char _buf[10];
 	double adc= v_cc.getADCreading();
 	Serial.print("Channel: "); Serial.print(v_cc.getChannel());
@@ -183,7 +173,7 @@ void loop()
 	Serial.print("  ADC Vbatt "); Serial.println(_buf);
 	//DEBUG END
 	*/
-	// retreive new data
+	// retreive new data 
 	v_cc.getData();
 	v_batt.getData();
 	current_l.getData();
@@ -198,13 +188,12 @@ void loop()
 }
 
 uint8_t checkSubscriptions() {
-	//printFreeRam("cS start");
+	printFreeRam("cS start");
 	uint8_t subs = 0;
 	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
 		if (::brokerobjs[obj_no]->subscriptionDue()) {
 			::data_map[obj_no] = true;
 			subs++;
-			//Serial.print("S-");
 		}
 		else ::data_map[obj_no] = false;
 	}
@@ -212,7 +201,10 @@ uint8_t checkSubscriptions() {
 }
 
 void processSubscriptions() {
-	//printFreeRam("pSub start");
+	/* Based on settings in data_map, generates a subscrition message
+	Currently uses aJson to generate message, but this may be un-necessary
+	*/
+	printFreeRam("pSub start");
 	// This should be a function .
 	uint8_t sub_idx = 0;
 	aJsonObject *json_root, *json_params, *json_msgtime;
@@ -226,8 +218,11 @@ void processSubscriptions() {
 			aJson.addNumberToObject(jsondataobjs[sub_idx], "value", brokerobjs[obj_no]->getValue());
 			if (brokerobjs[obj_no]->isVerbose()) {
 				aJson.addStringToObject(jsondataobjs[sub_idx], "units", brokerobjs[obj_no]->getUnit());
-				aJson.addNumberToObject(jsondataobjs[sub_idx], "min", brokerobjs[obj_no]->getMin()); // min and max are specific to this broker.
-				aJson.addNumberToObject(jsondataobjs[sub_idx], "max", brokerobjs[obj_no]->getMax());
+				// Only report min and max if they exist
+				double min_d = brokerobjs[obj_no]->getMin();
+				double max_d = brokerobjs[obj_no]->getMax();
+				if ( min_d == min_d ) aJson.addNumberToObject(jsondataobjs[sub_idx], "min", min_d); // min and max are specific to this broker.
+				if ( max_d == max_d ) aJson.addNumberToObject(jsondataobjs[sub_idx], "max", max_d);
 				aJson.addNumberToObject(jsondataobjs[sub_idx], "sample_time", (unsigned long)brokerobjs[obj_no]->getSampleTime()); // returns time in millis() since start which is wrong...
 			}
 			brokerobjs[obj_no]->setSubscriptionTime(); // Resets subscription time
@@ -293,7 +288,6 @@ uint16_t getMessageType(aJsonObject** json_in_msg) {
 	// Get ID here
 	aJsonObject *jsonrpc_id = aJson.getObjectItem(*json_in_msg, "id");
 	::json_id = jsonrpc_id->valueint;
-
 	//printFreeRam("gMT end3");
 	return json_method;
 }
@@ -307,8 +301,13 @@ uint16_t addMsgTime(char *stat_buff, uint16_t  d_idx) {
 }
 
 uint16_t addMsgId(char *stat_buff, uint16_t  d_idx) {
-	d_idx += sprintf(stat_buff + d_idx, "},\"id\":%u}", json_id);
+	d_idx += sprintf(stat_buff + d_idx, "},\"id\":%u}", ::json_id);
 	return d_idx;
+}
+
+void printResultStr() {
+	Serial.print(F("{\"result\":{"));
+
 }
 uint8_t processBrokerStatus(aJsonObject *json_in_msg) {
 	//printFreeRam("pBS start");
@@ -362,7 +361,7 @@ void generateStatusMessage() {
     "id" : 1
 	}*/
 	bool first = true;
-	Serial.print(F("{\"result\":{"));
+	printResultStr();
 	char statusBuffer[PARAM_BUFFER_SIZE]; // Should be plenty big to hold output for one parameter
 
 	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
@@ -382,10 +381,17 @@ void generateStatusMessage() {
 			dataIdx += sprintf(statusBuffer + dataIdx, "\"value\":%s", statusValue);
 			if (::status_verbose == true) {
 				dataIdx += sprintf(statusBuffer + dataIdx, ",\"units\":\"%s\"", brokerobjs[obj_no]->getUnit());
-				dtostrf((double)brokerobjs[obj_no]->getMin(), s_width, s_prec, statusValue); // convert (double) statusMin to string
-				dataIdx += sprintf(statusBuffer + dataIdx, ",\"min\":%s", statusValue);
-				dtostrf((double)brokerobjs[obj_no]->getMax(), s_width, s_prec, statusValue); // convert (double) statusMin to string
-				dataIdx += sprintf(statusBuffer + dataIdx, ",\"max\":%s", statusValue);
+				 // Only report min and max if they exist
+				double min_d = brokerobjs[obj_no]->getMin();
+				double max_d = brokerobjs[obj_no]->getMax();
+				if (min_d == min_d) {
+					dtostrf(min_d, s_width, s_prec, statusValue); // convert (double) statusMin to string
+					dataIdx += sprintf(statusBuffer + dataIdx, ",\"min\":%s", statusValue);
+				}
+				if (max_d == max_d) {
+					dtostrf(max_d, s_width, s_prec, statusValue); // convert (double) statusMin to string
+					dataIdx += sprintf(statusBuffer + dataIdx, ",\"max\":%s", statusValue);
+				}
 				dataIdx += sprintf(statusBuffer + dataIdx, ",\"sample_time\":%s", brokerobjs[obj_no]->getSplTimeStr());
 			}
 			dataIdx += sprintf(statusBuffer + dataIdx, "}");
@@ -420,7 +426,7 @@ uint8_t processBrokerUnubscribe(aJsonObject *json_in_msg) {
 	// Start output
 	char statusBuffer[PARAM_BUFFER_SIZE]; // Should be plenty big to hold output for one parameter
 	uint16_t dataIdx = 0; // should never exceed PARAM_BUFFER_SIZE
-	Serial.print(F("{\"result\":{"));
+	printResultStr();
 
 	// Now parse data list
 	if (jsonrpc_data) {
@@ -539,7 +545,7 @@ uint8_t processBrokerSubscribe(aJsonObject *json_in_msg) {
 	char statusBuffer[PARAM_BUFFER_SIZE]; // Should be plenty big to hold output for one parameter
 	bool first = true;
 	uint16_t dataIdx = 0; // should never exceed PARAM_BUFFER_SIZE
-	Serial.print(F("{\"result\":{"));
+	printResultStr();
 	// data will be list of parameters: ["Voltage","Vcc",Current_Load"]
 	// Now parse data list
 	if (jsonrpc_data) {
@@ -591,7 +597,7 @@ uint8_t processSet(aJsonObject *json_in_msg) {
 	// Start output
 	char statusBuffer[PARAM_BUFFER_SIZE]; // Should be plenty big to hold output for one parameter
 	uint16_t dataIdx = 0; // should never exceed PARAM_BUFFER_SIZE
-	Serial.print(F("{\"result\":{"));
+	printResultStr();
 	// So now we have 1 to n items of unknown name. Will have to iterate, and check existance.
 	bool first = true;
 	for (uint8_t broker_data_idx = 0; broker_data_idx < BROKERDATA_OBJECTS; broker_data_idx++) {
@@ -647,7 +653,7 @@ void processListData() {
 	bool first = true;
 	uint16_t dataIdx = 0; // should never exceed PARAM_BUFFER_SIZE
 	char param_type[] = "\"Rx\"";
-	Serial.print(F("{\"result\":{"));
+	printResultStr();
 	for (uint8_t broker_data_idx = 0; broker_data_idx < BROKERDATA_OBJECTS; broker_data_idx++) {
 		if (brokerobjs[broker_data_idx]->isRO()) param_type[2] = 'O';
 		else param_type[2] = 'W';
@@ -680,7 +686,7 @@ uint8_t processReset(aJsonObject *json_in_msg) {
 	bool first = true;
 	bool found = false;
 	uint16_t dataIdx = 0; // should never exceed PARAM_BUFFER_SIZE
-	Serial.print(F("{\"result\":{"));
+	printResultStr();
 
 	// data will be list of parameters: ["Voltage","Vcc",Current_Load"]
 	// Now parse data list

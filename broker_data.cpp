@@ -4,7 +4,6 @@
 #include "ADS1115.h"
 #include "broker_data.h"
 //// Define Objects
-//ADS1115 ads(ADS1115_ADDRESS);
 
 #define MS_PER_HR 3600000
 

@@ -6,6 +6,7 @@
 
 #define BROKER_DATA_NAME_LENGTH 15
 #define BROKER_DATA_UNIT_LENGTH 5
+
 /*
 	class BrokerData is an abstract class for all data objects
 */
