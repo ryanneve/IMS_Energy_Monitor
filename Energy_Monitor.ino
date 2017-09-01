@@ -94,13 +94,14 @@ BrokerData *brokerobjs[BROKERDATA_OBJECTS];
 int16_t	json_id = 0;
 bool status_verbose = true; // true is default.
 bool data_map[BROKERDATA_OBJECTS]; // Used to mark broker objects we are interested in.
+char broker_start_time[] = "20000101120000"; // Holds start time
 
 // Constants
 const char ON_NEW[] = "on_new";
 const char ON_CHANGE[] = "on_change";
 const char TZ[] = "UTC"; // Time zone is forced to UTC for now.
 
-const uint8_t JSON_REQUEST_COUNT = 7; // How many different request types are there.
+const uint8_t JSON_REQUEST_COUNT = 8; // How many different request types are there.
 enum json_r_t {
 	BROKER_STATUS = 0,
 	BROKER_SUBSCRIBE = 1,
@@ -108,9 +109,10 @@ enum json_r_t {
 	BROKER_SET = 3,
 	BROKER_LIST_DATA = 4,
 	BROKER_RESET = 5,
-	BROKER_ERROR = 6
+	BROKER_B_STATUS = 6,
+	BROKER_ERROR = 7
 };
-const char *REQUEST_STRINGS[JSON_REQUEST_COUNT] = { "status","subscribe","unsubscribe","set","list_data","reset","" };
+const char *REQUEST_STRINGS[JSON_REQUEST_COUNT] = { "status","subscribe","unsubscribe","set","list_data","reset","broker_status","" };
 
 void setup() {
 	// set the Time library to use Teensy 3.0's RTC to keep time
@@ -151,6 +153,7 @@ void setup() {
 	brokerobjs[9] = &volt_div_high;
 	brokerobjs[10] = &date_sys;
 	brokerobjs[11] = &time_sys;
+	getSampleTimeStr(broker_start_time);
 }
 
 void loop()
@@ -309,7 +312,7 @@ void printResultStr() {
 	Serial.print(F("{\"result\":{"));
 
 }
-uint8_t processBrokerStatus(aJsonObject *json_in_msg) {
+uint8_t processStatus(aJsonObject *json_in_msg) {
 	//printFreeRam("pBS start");
 	uint8_t status_matches_found = 0;
 	// get params which will contain data and style
@@ -720,6 +723,41 @@ uint8_t processReset(aJsonObject *json_in_msg) {
 }
 
 
+
+void processBrokerStatus() {
+	/*
+	{
+	"result" : {
+		"suspended":True|False,
+		"power_on":True|False|"unknown",
+		"instr_connected":True|False,
+		"db_connected":True|False,
+		"start_time":<timestamp>,
+		"last_data_time":<timestamp>|"None",
+		"last_db_time": <timestamp>|"None",
+		"message_time" : {
+			"value" : 2010092416310000,
+			"units" : "EST"}
+	},
+	"id":8
+	}
+	*/
+
+	uint16_t dataIdx = 0; // should never exceed PARAM_BUFFER_SIZE
+	char statusBuffer[PARAM_BUFFER_SIZE]; // Should be plenty big to hold output for one parameter
+	printResultStr();
+	Serial.print(F("\"suspended\":False"));
+	Serial.print(F("\",power_on\":True"));
+	Serial.print(F("\",instr_connected\":True"));
+	Serial.print(F("\",db_connected\":False"));
+	dataIdx += sprintf(statusBuffer + dataIdx, ",\"start_time\":%s", ::broker_start_time);
+	dataIdx += sprintf(statusBuffer + dataIdx, ",\"last_data_time\":%s", v_batt.getSplTimeStr());
+	dataIdx += sprintf(statusBuffer + dataIdx, ",\"last_db_time\":\"None\"");
+	dataIdx = addMsgTime(statusBuffer, dataIdx);
+	dataIdx = addMsgId(statusBuffer, dataIdx);
+	Serial.println(statusBuffer);
+}
+
 void clearDataMap() {
 	for (uint8_t i = 0; i < BROKERDATA_OBJECTS; i++) {
 		::data_map[i] = false;
@@ -753,7 +791,7 @@ bool processSerial() {
 			//printFreeRam("pSer 1");
 			switch (message_type) {
 				case (BROKER_STATUS): // Get status of items listed in jsonrpc_params
-					if (processBrokerStatus(serial_msg)) {
+					if (processStatus(serial_msg)) {
 						printFreeRam("pSer status");
 						generateStatusMessage();
 					}
@@ -773,7 +811,11 @@ bool processSerial() {
 					break;
 				case (BROKER_RESET):
 					processReset(serial_msg);
-					break;			
+					break;
+				case (BROKER_B_STATUS):
+					processBrokerStatus();
+					break;
+					
 			}
 		}
 		else {
