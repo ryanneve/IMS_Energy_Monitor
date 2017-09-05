@@ -41,3 +41,20 @@ Example JSON requests:
 {"method" : "set", "params" : {"Date":20170829,"Time":145630},"id" : 175}
 
 {"method" : "status", "params" : {"data":["Date","Time"]},"id" : 10}
+
+
+{"method" : "broker_status", "id" : 1003}
+
+
+{"result":
+	{"suspended":False,
+	"power_on":True,
+	"instr_connected":True,
+	"db_connected":False,
+	"start_time":19710905153617,
+	"last_data_time":19710905153647,
+	"last_db_time":"None",,"message_time":{"value":19710905153649,"units":"UTC"}},"id":1003}
+	
+	
+	
+	

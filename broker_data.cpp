@@ -8,6 +8,9 @@
 #define MS_PER_HR 3600000
 
 
+void BrokerData::dataToStr(char * out_str) {
+	dtostrf(_data_value, _resp_width, _resp_dec, out_str);
+}
 
 void DynamicData::subscribe(uint32_t sub_min_rate_ms, uint32_t sub_max_rate_ms) {
 	_subscription_rate_ms = sub_min_rate_ms;

@@ -62,8 +62,8 @@ TO DO
 // define constants
 const uint8_t ADS1115_ADDRESS = 0x48;
 const uint16_t LOOP_DELAY_TIME_MS = 2000;	// Time in ms to wait between sampling loops.
-const uint8_t STATVALWIDTH = 5;	// Used for converting double to string
-const uint8_t STATVALPREC = 3;	// Used for converting double to string
+//const uint8_t STATVALWIDTH = 5;	// Used for converting double to string
+//const uint8_t STATVALPREC = 3;	// Used for converting double to string
 
 
 
@@ -72,19 +72,19 @@ ADS1115 ads(ADS1115_ADDRESS);
 aJsonStream serial_stream(&Serial);
 
 // Someday we might load all this from EEPROM so that the code can be as generic as possible.
-StaticData	volt_div_low("V_div_low", "Ohms", V_DIV_LOW);
-StaticData	volt_div_high("V_div_high", "Ohms", V_DIV_HIGH);
+StaticData	volt_div_low("V_div_low", "Ohms", V_DIV_LOW,7,2);
+StaticData	volt_div_high("V_div_high", "Ohms", V_DIV_HIGH,7,2);
 //VoltageData2 v_batt2("Voltage", ads, ADC_CHANNEL_VOLTAGE, volt_div_high, volt_div_low);
-VoltageData v_batt("Voltage", ads, ADC_CHANNEL_VOLTAGE, V_DIV_HIGH, V_DIV_LOW);
-VoltageData v_cc("Vcc", ads, ADC_CHANNEL_VCC, 0, 1);	// No voltage divider
-CurrentData	current_l("Load_Current", ads, v_cc, ADC_CHANNEL_LOAD_CURRENT, ACS715_mV_per_A);
-CurrentData	current_c("Charge_Current", ads, v_cc, ADC_CHANNEL_CHARGE_CURRENT, ACS715_mV_per_A);
-PowerData	power_l("Load_Power", current_l, v_batt);
-PowerData	power_c("Charge_Power", current_c, v_batt);
-EnergyData	energy_l("Load_Energy", power_l);
-EnergyData	energy_c("Charge_Energy", power_c);
-TimeData	date_sys("Date_UTC",true);
-TimeData	time_sys("Time_UTC",false);
+VoltageData v_batt("Voltage", ads, ADC_CHANNEL_VOLTAGE, V_DIV_HIGH, V_DIV_LOW,6,3);
+VoltageData v_cc("Vcc", ads, ADC_CHANNEL_VCC, 0, 1,5,3);	// No voltage divider
+CurrentData	current_l("Load_Current", ads, v_cc, ADC_CHANNEL_LOAD_CURRENT, ACS715_mV_per_A,6,3);
+CurrentData	current_c("Charge_Current", ads, v_cc, ADC_CHANNEL_CHARGE_CURRENT, ACS715_mV_per_A,6,3);
+PowerData	power_l("Load_Power", current_l, v_batt,7,3);
+PowerData	power_c("Charge_Power", current_c, v_batt,7,3);
+EnergyData	energy_l("Load_Energy", power_l,10,3);
+EnergyData	energy_c("Charge_Energy", power_c,10,3);
+TimeData	date_sys("Date_UTC",true,8,0);
+TimeData	time_sys("Time_UTC",false,6,0);
 // Now an array to hold above objects as their base class.
 BrokerData *brokerobjs[BROKERDATA_OBJECTS];
 
@@ -114,16 +114,32 @@ enum json_r_t {
 };
 const char *REQUEST_STRINGS[JSON_REQUEST_COUNT] = { "status","subscribe","unsubscribe","set","list_data","reset","broker_status","" };
 
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+	void startup_early_hook() {
+		WDOG_TOVALL = 10000; // time in ms between resets. 10000 = 10 seconds
+		WDOG_TOVALH = 0;
+		WDOG_PRESC = 0; // prescaler
+		WDOG_STCTRLH = (WDOG_STCTRLH_ALLOWUPDATE | WDOG_STCTRLH_WDOGEN); // Enable WDG
+	}
+#ifdef __cplusplus
+}
+#endif
+
+
 void setup() {
+	startup_early_hook();
 	// set the Time library to use Teensy 3.0's RTC to keep time
 	setSyncProvider(getTeensy3Time);
     Wire.begin();
 	Serial.begin(57600);	//USB
-	//Serial1.begin(57600);	// PINS
 	while (!Serial);	// Leonardo seems to need this
-	//while (!Serial1);	// Leonardo seems to need this
-	Serial.println(F("UNC-IMS Power Monitor"));
+	WatchdogReset();
+	Serial.println(F("UNC-IMS Power Monitor 0.3"));
 	delay(3000);
+	WatchdogReset();
 	Serial.println(ads.testConnection() ? F("ADS1115 connected") : F("ADS1115  failed"));
 	ads.initialize();
 	// We're going to do single shot sampling
@@ -154,29 +170,18 @@ void setup() {
 	brokerobjs[10] = &date_sys;
 	brokerobjs[11] = &time_sys;
 	getSampleTimeStr(broker_start_time);
+	WatchdogReset();
 }
 
 void loop()
 {
 	printFreeRam("loop0");
+	WatchdogReset();
 	//datetime.getData(); // Update clock values.
 	// Process incoming messages
 	processSerial();
-	//DEBUG START
-	/*
-	// Get data
-	char _buf[10];
-	double adc= v_cc.getADCreading();
-	Serial.print("Channel: "); Serial.print(v_cc.getChannel());
-	dtostrf(adc, 7, 4, _buf);
-	Serial.print("  ADC Vcc "); Serial.println(_buf);
-	adc = v_batt.getADCreading();
-	Serial.print("Channel: "); Serial.print(v_batt.getChannel());
-	dtostrf(adc, 7, 4, _buf);
-	Serial.print("  ADC Vbatt "); Serial.println(_buf);
-	//DEBUG END
-	*/
-	// retreive new data 
+	WatchdogReset();
+	// retreive new data from ADC
 	v_cc.getData();
 	v_batt.getData();
 	current_l.getData();
@@ -185,8 +190,10 @@ void loop()
 	power_c.getData();
 	energy_l.getData();
 	energy_l.getData();
+	WatchdogReset();
 	// See what subscriptions are up
-	if (checkSubscriptions() > 0) processSubscriptions();
+	if (checkSubscriptions() > 0) processSubscriptions2();
+	WatchdogReset();
 	delay(LOOP_DELAY_TIME_MS); // MAY BE WORTH LOOKING IN TO LOWERING POWER CONSUMPTION HERE
 }
 
@@ -202,6 +209,47 @@ uint8_t checkSubscriptions() {
 	}
 	return subs;
 }
+
+void processSubscriptions2() {
+	/* Based on settings in data_map, generates a subscrition message
+	Currently uses aJson to generate message, but this may be un-necessary
+	*/
+	printFreeRam("pSub2 start");
+	Serial.print("{\"method\":\"subscription\",");
+	Serial.print("\"params\":{");
+	char statusBuffer[PARAM_BUFFER_SIZE]; // Should be plenty big to hold output for one parameter
+	uint8_t dataIdx = 0;
+	bool first = true;
+	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
+		if (::data_map[obj_no] == true) {
+			brokerobjs[obj_no]->getData(); // Update values
+			char dataStr[20];	// HOLDS A STRING REPRESENTING A SINGLE VALUE
+			if (!first) dataIdx += sprintf(statusBuffer + dataIdx, ",");
+			else first = false;
+			dataIdx += sprintf(statusBuffer + dataIdx, "\"%s\":{", brokerobjs[obj_no]->getName());
+			brokerobjs[obj_no]->dataToStr(dataStr);
+			dataIdx += sprintf(statusBuffer + dataIdx, "\"value\":%s", dataStr);
+			if (brokerobjs[obj_no]->isVerbose()) {
+				dataIdx += sprintf(statusBuffer + dataIdx, ",\"units\":\"%s\"", brokerobjs[obj_no]->getUnit());
+				// Only report min and max if they exist
+				double min_d = brokerobjs[obj_no]->getMin();
+				double max_d = brokerobjs[obj_no]->getMax();
+				if (min_d == min_d) dataIdx += sprintf(statusBuffer + dataIdx, ",\"min\":\"%f\"", min_d);
+				if (max_d == max_d) dataIdx += sprintf(statusBuffer + dataIdx, ",\"max\":\"%f\"", max_d);
+				dataIdx += sprintf(statusBuffer + dataIdx, ",\"sample_time\":\"%s\"", brokerobjs[obj_no]->getSplTimeStr());
+			}
+			dataIdx += sprintf(statusBuffer + dataIdx, "}"); // Close out this parameter
+			Serial.print(statusBuffer);
+			dataIdx = 0;
+		}
+	}
+	dataIdx = addMsgTime(statusBuffer, 0);
+	dataIdx += sprintf(statusBuffer + dataIdx, "}}"); // Close out params and message
+	Serial.println(statusBuffer);
+	//printFreeRam("pSub end");
+}
+
+
 
 void processSubscriptions() {
 	/* Based on settings in data_map, generates a subscrition message
@@ -370,15 +418,7 @@ void generateStatusMessage() {
 	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
 		if (::data_map[obj_no] == true) {
 			char statusValue[20] = "-999"; // Holds status double value as a string
-			// Need to do a decent conversion based on data.
-			uint8_t s_width = STATVALWIDTH;
-			uint8_t s_prec = STATVALPREC;
-			double brokerValue = brokerobjs[obj_no]->getValue();
-			if (brokerValue > (pow(10, s_width))) { // This handles dates which are CCYYMMDD and times (HHmmss).
-				s_prec = 0;
-				s_width =  8;
-			}
-			dtostrf(brokerValue, s_width, s_prec, statusValue); // convert (double) statusValue to string
+			brokerobjs[obj_no]->dataToStr(statusValue);
 			if (!first) dataIdx += sprintf(statusBuffer + dataIdx, ","); // preceding comma
 			dataIdx += sprintf(statusBuffer + dataIdx, "\"%s\":{", brokerobjs[obj_no]->getName());
 			dataIdx += sprintf(statusBuffer + dataIdx, "\"value\":%s", statusValue);
@@ -388,11 +428,11 @@ void generateStatusMessage() {
 				double min_d = brokerobjs[obj_no]->getMin();
 				double max_d = brokerobjs[obj_no]->getMax();
 				if (min_d == min_d) {
-					dtostrf(min_d, s_width, s_prec, statusValue); // convert (double) statusMin to string
+					brokerobjs[obj_no]->dataToStr(statusValue);
 					dataIdx += sprintf(statusBuffer + dataIdx, ",\"min\":%s", statusValue);
 				}
 				if (max_d == max_d) {
-					dtostrf(max_d, s_width, s_prec, statusValue); // convert (double) statusMin to string
+					brokerobjs[obj_no]->dataToStr(statusValue);
 					dataIdx += sprintf(statusBuffer + dataIdx, ",\"max\":%s", statusValue);
 				}
 				dataIdx += sprintf(statusBuffer + dataIdx, ",\"sample_time\":%s", brokerobjs[obj_no]->getSplTimeStr());
@@ -854,4 +894,17 @@ const char * BoolToString(const bool b)
 time_t getTeensy3Time()
 {
 	return Teensy3Clock.get();
+}
+
+
+void WatchdogReset()
+{
+	//Serial.println("WatchdogReset");
+	// use the following 4 lines to kick the dog
+	noInterrupts();
+	WDOG_REFRESH = 0xA602;
+	WDOG_REFRESH = 0xB480;
+	interrupts();
+	// if you don't refresh the watchdog timer before it runs out, the system will be rebooted
+	delay(1); // the smallest delay needed between each refresh is 1ms. anything faster and it will also reboot.
 }

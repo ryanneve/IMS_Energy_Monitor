@@ -7,20 +7,27 @@
 #define BROKER_DATA_NAME_LENGTH 15
 #define BROKER_DATA_UNIT_LENGTH 5
 
+
+# define STAT_VAL_WIDTH 5	// Used for converting double to string
+# define STAT_VAL_PREC  3	// Used for converting double to string
+
 /*
 	class BrokerData is an abstract class for all data objects
 */
 class BrokerData {
 public:
-	BrokerData(const char *name, const char *unit,bool ro) {
+	BrokerData(const char *name, const char *unit,bool ro,uint8_t resp_width,uint8_t resp_dec) {
 		strncpy(_data_name, name, BROKER_DATA_NAME_LENGTH);
 		strncpy(_data_unit, unit, BROKER_DATA_UNIT_LENGTH);
 		_ro = ro;
+		_resp_width = max(resp_width, resp_dec);
+		_resp_dec = resp_dec;
 	};
 	const char	*getName() { return _data_name; }
 	const char	*getUnit() { return _data_unit; }
 	bool		isRO() { return _ro; }
 	char *	getSplTimeStr() { return _last_sample_time_str; }
+	void	dataToStr(char * out_str);
 	// virtual methods
 	virtual bool	subscriptionDue() { return false; }
 	virtual bool	isVerbose() { return false; }
@@ -43,6 +50,8 @@ protected:
 	bool	_dynamic;
 	double	_data_value;
 	char	_last_sample_time_str[15]; // string representing time of last sample
+	uint8_t	_resp_width;		// dtostrf() width
+	uint8_t	_resp_dec;			// dtostrf() decimal places
 private:
 	char	_data_name[BROKER_DATA_NAME_LENGTH];
 	char	_data_unit[BROKER_DATA_UNIT_LENGTH];
@@ -55,7 +64,7 @@ class StaticData is an class for all data objects which only change based on mes
 */
 class StaticData : public BrokerData {
 public:
-	StaticData(const char *name, const char *unit,double initial_value) : BrokerData(name, unit, false) {
+	StaticData(const char *name, const char *unit,double initial_value, uint8_t resp_width, uint8_t resp_dec) : BrokerData(name, unit, false, resp_width, resp_dec) {
 		_dynamic = false;
 		setData(initial_value);
 	}
@@ -72,7 +81,7 @@ class DynamicData is an abstract intermediate class for all data objects which h
 */
 class DynamicData : public BrokerData {
 public:
-	DynamicData(const char *name, const char *unit, bool ro) : BrokerData(name, unit, ro) {
+	DynamicData(const char *name, const char *unit, bool ro, uint8_t resp_width, uint8_t resp_dec) : BrokerData(name, unit, ro, resp_width, resp_dec) {
 		_dynamic = true;
 		_subscription_rate_ms = 0; // 0  is not subscribed
 		_last_sample_time = 0;
@@ -124,7 +133,7 @@ Always Read Only
 */
 class ADCData : public DynamicData {
 public:
-	ADCData(const char *name, const char *unit, ADS1115 &ads, uint8_t ADCchannel) : DynamicData(name,unit,true) {
+	ADCData(const char *name, const char *unit, ADS1115 &ads, uint8_t ADCchannel, uint8_t resp_width, uint8_t resp_dec) : DynamicData(name,unit,true,resp_width,resp_dec) {
 		_channel = ADCchannel; // should be 0-4
 		_ads = &ads;
 	}
@@ -142,7 +151,7 @@ class VoltageData is a class for all data objects which represent a voltage obje
 */
 class VoltageData : public ADCData {
 public:
-	VoltageData(const char *name, ADS1115 &ads, uint8_t ADCchannel, uint32_t high_div, uint32_t low_div) : ADCData(name,"V",ads,ADCchannel) {
+	VoltageData(const char *name, ADS1115 &ads, uint8_t ADCchannel, uint32_t high_div, uint32_t low_div,  uint8_t resp_width, uint8_t resp_dec) : ADCData(name,"V",ads,ADCchannel,resp_width,resp_dec) {
 		//_v_div = (high_div + low_div) / low_div;
 		_high_div = high_div;
 		_low_div = low_div;
@@ -177,7 +186,7 @@ class CurrentData is a class for all data objects which represent a current obje
 */
 class CurrentData: public ADCData {
 public:
-	CurrentData(const char *name, ADS1115 &ads,VoltageData &vcc,uint8_t ADCchannel,double mV_per_A) : ADCData(name,"A",ads,ADCchannel) {
+	CurrentData(const char *name, ADS1115 &ads,VoltageData &vcc,uint8_t ADCchannel,double mV_per_A, uint8_t resp_width, uint8_t resp_dec) : ADCData(name,"A",ads,ADCchannel, resp_width, resp_dec) {
 		_vcc = &vcc;
 		_mV_per_A = mV_per_A;
 	}
@@ -194,7 +203,7 @@ Always Read Only
 */
 class PowerData : public DynamicData {
 public:
-	PowerData(const char *name, CurrentData &current, VoltageData &voltage) : DynamicData(name,"W",true) {
+	PowerData(const char *name, CurrentData &current, VoltageData &voltage,uint8_t resp_width,uint8_t resp_dec) : DynamicData(name,"W",true, resp_width, resp_dec) {
 		_voltage = &voltage;
 		_current = &current;
 	}
@@ -212,7 +221,7 @@ class EnergyData is a class for all data objects which represent an energy objec
 */
 class EnergyData : public DynamicData {
 public:
-	EnergyData(const char *name, PowerData &power) : DynamicData(name,"Wh",false) {
+	EnergyData(const char *name, PowerData &power, uint8_t resp_width, uint8_t resp_dec) : DynamicData(name,"Wh",false, resp_width, resp_dec) {
 		_power = &power;
 }
 	double getData(); // Calculates new Energy based on most recent power
@@ -225,7 +234,7 @@ private:
 /*Holds a date or a time. Figures out which based on value and acts accordingly*/
 class TimeData : public DynamicData{
 public:
-	TimeData(const char *name, bool is_a_date) :DynamicData(name, (is_a_date?"CCYYMMDD":"HHmmss"), false) {
+	TimeData(const char *name, bool is_a_date, uint8_t resp_width, uint8_t resp_dec) :DynamicData(name, (is_a_date?"CCYYMMDD":"HHmmss"), false, resp_width, resp_dec) {
 		_is_date = is_a_date;
 	}
 	double getData();
