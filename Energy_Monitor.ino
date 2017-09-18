@@ -138,7 +138,7 @@ void setup() {
 	Serial.begin(57600);	//USB
 	while (!Serial);	// Leonardo seems to need this
 	WatchdogReset();
-	Serial.println(F("UNC-IMS Power Monitor 0.3"));
+	Serial.println(F("UNC-IMS Power Monitor 0.4"));
 	delay(3000);
 	WatchdogReset();
 	Serial.println(ads.testConnection() ? F("ADS1115 connected") : F("ADS1115  failed"));
@@ -193,25 +193,29 @@ void loop()
 	energy_l.getData();
 	WatchdogReset();
 	// See what subscriptions are up
-	if (checkSubscriptions() > 0) processSubscriptions2();
+	if (checkSubscriptions(data_map,brokerobjs,BROKERDATA_OBJECTS) > 0) processSubscriptions(data_map, brokerobjs, BROKERDATA_OBJECTS);
 	WatchdogReset();
 	delay(LOOP_DELAY_TIME_MS); // MAY BE WORTH LOOKING IN TO LOWERING POWER CONSUMPTION HERE
 }
 
-uint8_t checkSubscriptions() {
+
+uint8_t checkSubscriptions(bool datamap[], BrokerData *broker_objs[], const uint8_t broker_obj_count) {
 	printFreeRam("cS start");
 	uint8_t subs = 0;
-	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
-		if (::brokerobjs[obj_no]->subscriptionDue()) {
-			::data_map[obj_no] = true;
+	for (uint8_t obj_no = 0; obj_no < broker_obj_count; obj_no++) {
+		if (broker_objs[obj_no]->subscriptionDue()) {
+			datamap[obj_no] = true;
 			subs++;
 		}
-		else ::data_map[obj_no] = false;
+		else datamap[obj_no] = false;
 	}
 	return subs;
 }
 
-void processSubscriptions2() {
+
+
+
+void processSubscriptions(const bool datamap[], BrokerData *broker_objs[], const uint8_t broker_obj_count) {
 	/* Based on settings in data_map, generates a subscrition message
 	Currently uses aJson to generate message, but this may be un-necessary
 	*/
@@ -221,23 +225,23 @@ void processSubscriptions2() {
 	char statusBuffer[PARAM_BUFFER_SIZE]; // Should be plenty big to hold output for one parameter
 	uint8_t dataIdx = 0;
 	bool first = true;
-	for (uint8_t obj_no = 0; obj_no < BROKERDATA_OBJECTS; obj_no++) {
-		if (::data_map[obj_no] == true) {
-			::brokerobjs[obj_no]->getData(); // Update values
+	for (uint8_t obj_no = 0; obj_no < broker_obj_count; obj_no++) {
+		if (datamap[obj_no] == true) {
+			broker_objs[obj_no]->getData(); // Update values
 			char dataStr[20];	// HOLDS A STRING REPRESENTING A SINGLE VALUE
 			if (!first) dataIdx += sprintf(statusBuffer + dataIdx, ",");
 			else first = false;
-			dataIdx += sprintf(statusBuffer + dataIdx, "\"%s\":{", ::brokerobjs[obj_no]->getName());
-			::brokerobjs[obj_no]->dataToStr(dataStr);
+			dataIdx += sprintf(statusBuffer + dataIdx, "\"%s\":{", broker_objs[obj_no]->getName());
+			broker_objs[obj_no]->dataToStr(dataStr);
 			dataIdx += sprintf(statusBuffer + dataIdx, "\"value\":%s", dataStr);
-			if (::brokerobjs[obj_no]->isVerbose()) {
-				dataIdx += sprintf(statusBuffer + dataIdx, ",\"units\":\"%s\"", ::brokerobjs[obj_no]->getUnit());
+			if (broker_objs[obj_no]->isVerbose()) {
+				dataIdx += sprintf(statusBuffer + dataIdx, ",\"units\":\"%s\"", broker_objs[obj_no]->getUnit());
 				// Only report min and max if they exist
-				double min_d = ::brokerobjs[obj_no]->getMin();
-				double max_d = ::brokerobjs[obj_no]->getMax();
+				double min_d = broker_objs[obj_no]->getMin();
+				double max_d = broker_objs[obj_no]->getMax();
 				if (min_d == min_d) dataIdx += sprintf(statusBuffer + dataIdx, ",\"min\":\"%f\"", min_d);
 				if (max_d == max_d) dataIdx += sprintf(statusBuffer + dataIdx, ",\"max\":\"%f\"", max_d);
-				dataIdx += sprintf(statusBuffer + dataIdx, ",\"sample_time\":\"%s\"", ::brokerobjs[obj_no]->getSplTimeStr());
+				dataIdx += sprintf(statusBuffer + dataIdx, ",\"sample_time\":\"%s\"", broker_objs[obj_no]->getSplTimeStr());
 			}
 			dataIdx += sprintf(statusBuffer + dataIdx, "}"); // Close out this parameter
 			Serial.print(statusBuffer);
@@ -321,7 +325,7 @@ uint16_t getMessageType(aJsonObject** json_in_msg,int16_t * json_id, const uint8
 
 
 
-uint8_t processStatus(aJsonObject *json_in_msg) {
+uint8_t processStatus(aJsonObject *json_in_msg,bool * statusverbose, BrokerData *broker_objs[], const uint8_t broker_obj_count) {
 	//printFreeRam("pBS start");
 	uint8_t status_matches_found = 0;
 	// get params which will contain data and style
@@ -329,8 +333,8 @@ uint8_t processStatus(aJsonObject *json_in_msg) {
 	aJsonObject *jsonrpc_params = aJson.getObjectItem(json_in_msg, "params");
 	// Extract Style from params
 	aJsonObject *jsonrpc_style = aJson.getObjectItem(jsonrpc_params, "style");
-	if (!strcmp(jsonrpc_style->valuestring, "terse")) ::status_verbose = false;
-	else ::status_verbose = true;
+	if (!strcmp(jsonrpc_style->valuestring, "terse")) *statusverbose = false;
+	else *statusverbose = true;
 	clearDataMap(); // Sets all data_map array values to false
 	// Now Extract data list
 	aJsonObject *jsonrpc_data = aJson.getObjectItem(jsonrpc_params, "data");
@@ -342,7 +346,7 @@ uint8_t processStatus(aJsonObject *json_in_msg) {
 	while (jsonrpc_data_item) { 
 		for (uint8_t broker_data_idx = 0; broker_data_idx < BROKERDATA_OBJECTS; broker_data_idx++) {
 			//Serial.print("Comparing "); Serial.print(jsonrpc_data_item->valuestring); Serial.print(" to "); Serial.println(brokerobjs[broker_data_idx]->getName());
-			if (!strcmp(jsonrpc_data_item->valuestring, ::brokerobjs[broker_data_idx]->getName())) {
+			if (!strcmp(jsonrpc_data_item->valuestring, broker_objs[broker_data_idx]->getName())) {
 				//Serial.print(F("B data: ")); Serial.println(jsonrpc_data_item->valuestring);
 				::data_map[broker_data_idx] = true; 
 				//Serial.print(broker_data_idx); Serial.print("="); Serial.println(::data_map[broker_data_idx]);
@@ -789,7 +793,7 @@ bool processSerial() {
 			//printFreeRam("pSer 1");
 			switch (message_type) {
 				case (BROKER_STATUS): // Get status of items listed in jsonrpc_params
-					if (processStatus(serial_msg)) {
+					if (processStatus(serial_msg,&::status_verbose,::brokerobjs,BROKERDATA_OBJECTS)) {
 						printFreeRam("pSer status");
 						generateStatusMessage();
 					}

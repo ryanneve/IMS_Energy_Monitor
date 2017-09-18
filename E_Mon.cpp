@@ -1,6 +1,4 @@
-// 
-// 
-// 
+/* Functions specific to the Energry Monitoring application*/
 
 #include "E_Mon.h"
 
