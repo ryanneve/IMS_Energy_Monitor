@@ -1,7 +1,6 @@
 
 #include <Arduino.h>
 #include <timelib.h>
-#include "ADS1115.h"
 #include "broker_data.h"
 //// Define Objects
 

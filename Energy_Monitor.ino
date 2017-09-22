@@ -41,15 +41,14 @@ TO DO
 	- Make resistor values setable and store them in EEPROM.
 */
 
-#include <RingBufferDMA.h>
-#include <RingBuffer.h>
+//#include <RingBufferDMA.h>
+//#include <RingBuffer.h>
 #include "broker_util.h"
 #include "E_Mon.h"
-//#include "ADS1115.h"
 #include "broker_data.h"
 #include <ADC_Module.h>
 #include <ADC.h>
-#include <timelib.h>
+#include <TimeLib.h>
 #include <aJSON.h>
 
 const uint8_t ADC_CHANNEL_LOAD_CURRENT = PIN_A0;	// ADC0

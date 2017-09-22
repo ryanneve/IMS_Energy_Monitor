@@ -1,8 +1,8 @@
 
+#include <Arduino.h> 
 
 #ifndef _BROKER_DATA_h
 #define _BROKER_DATA_h
-#include "ADS1115.h"
 
 #define BROKER_DATA_NAME_LENGTH 15
 #define BROKER_DATA_UNIT_LENGTH 9 // CCYYMMDD
