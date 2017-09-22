@@ -2,7 +2,10 @@
 
 #ifndef _E_MON_h
 #define _E_MON_h
+
 #include "broker_data.h"
+#include <ADC_Module.h>
+#include <ADC.h>
 
 
 /*
@@ -11,15 +14,15 @@ Always Read Only
 */
 class ADCData : public DynamicData {
 public:
-	ADCData(const char *name, const char *unit, ADS1115 &ads, uint8_t ADCchannel, uint8_t resp_width, uint8_t resp_dec) : DynamicData(name, unit, true, resp_width, resp_dec) {
+	ADCData(const char *name, const char *unit, ADC &adc, uint8_t ADCchannel, uint8_t resp_width, uint8_t resp_dec) : DynamicData(name, unit, true, resp_width, resp_dec) {
 		_channel = ADCchannel; // should be 0-4
-		_ads = &ads;
+		_adc = &adc;
 	}
 	uint16_t getADCreading();
 	uint8_t	getChannel() { return _channel; }
 	double	getValue() { return _data_value; }
 protected:
-	ADS1115	*_ads;
+	ADC	*_adc;
 private:
 	uint8_t	_channel;
 };
@@ -29,7 +32,7 @@ class VoltageData is a class for all data objects which represent a voltage obje
 */
 class VoltageData : public ADCData {
 public:
-	VoltageData(const char *name, ADS1115 &ads, uint8_t ADCchannel, uint32_t high_div, uint32_t low_div, uint8_t resp_width, uint8_t resp_dec) : ADCData(name, "V", ads, ADCchannel, resp_width, resp_dec) {
+	VoltageData(const char *name, ADC &adc, uint8_t ADCchannel, uint32_t high_div, uint32_t low_div, uint8_t resp_width, uint8_t resp_dec) : ADCData(name, "V", adc, ADCchannel, resp_width, resp_dec) {
 		//_v_div = (high_div + low_div) / low_div;
 		_high_div = high_div;
 		_low_div = low_div;
@@ -41,38 +44,19 @@ private:
 	double	_high_div;
 	double	_low_div;
 };
-/*
-class VoltageData2 : public ADCData {
-public:
-VoltageData2(const char *name, ADS1115 &ads, uint8_t ADCchannel, StaticData &high_div, StaticData &low_div) : ADCData(name, "V", ads, ADCchannel) {
-_h_div = &high_div;
-_l_div = &low_div;
-}
-double	getData();
-bool	setData(double set_value) { return false; }
-private:
-StaticData *_h_div;
-StaticData *_l_div;
-//double	_v_div() { return (_high_div + _low_div) / _low_div; }
-};
-*/
-
-
 
 /*
 class CurrentData is a class for all data objects which represent a current object
 */
 class CurrentData : public ADCData {
 public:
-	CurrentData(const char *name, ADS1115 &ads, VoltageData &vcc, uint8_t ADCchannel, double mV_per_A, uint8_t resp_width, uint8_t resp_dec) : ADCData(name, "A", ads, ADCchannel, resp_width, resp_dec) {
-		_vcc = &vcc;
+	CurrentData(const char *name, ADC &adc, uint8_t ADCchannel, double mV_per_A, uint8_t resp_width, uint8_t resp_dec) : ADCData(name, "A", adc, ADCchannel, resp_width, resp_dec) {
 		_mV_per_A = mV_per_A;
 	}
 	double	getData();
 	bool	setData(double set_value) { return false; }
 private:
 	double	_mV_per_A;
-	VoltageData	*_vcc;
 };
 
 /*

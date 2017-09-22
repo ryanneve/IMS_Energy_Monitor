@@ -1,24 +1,24 @@
 Example JSON requests:
 
-{"method" : "status", "params" : {"data":["Voltage", "Vcc","Load_Power"],"style":"verbose"},"id" : 10}
+{"method" : "status", "params" : {"data":["Voltage","Load_Power"],"style":"verbose"},"id" : 10}
 
 
 
 {"method" : "set", "params" : {"Load_Energy":100,"Charge_Energy":0},"id" : 17}
 
-{"method" : "status", "params" : {"data":["Voltage", "Vcc", "Load_Energy"],"style":"terse"},"id" : 13}
+{"method" : "status", "params" : {"data":["Voltage", "Load_Energy"],"style":"terse"},"id" : 13}
 
 
-{"method" : "subscribe", "params" : {"data":["Voltage", "Vcc"],"style":"terse","updates":"on_new","min_update_ms":4000},"id" : 14}
+{"method" : "subscribe", "params" : {"data":["Voltage"],"style":"terse","updates":"on_new","min_update_ms":4000},"id" : 14}
 
 
-{"method" : "subscribe", "params" : {"data":["Voltage", "Vcc"],"style":"verbose","updates":"on_change","min_update_ms":1000,"max_update_ms":5000},"id" : 24}
+{"method" : "subscribe", "params" : {"data":["Voltage"],"style":"verbose","updates":"on_change","min_update_ms":1000,"max_update_ms":5000},"id" : 24}
 
 
 {"method" : "subscribe", "params" : {"data":["Load_Energy", "Charge_Current"],"style":"verbose","updates":"on_new","min_update_ms":5000,"max_update_ms":15000},"id" : 15}
 
 
-{"method" : "unsubscribe", "params" : {"data":["Voltage", "Vcc"]},"id" : 16}
+{"method" : "unsubscribe", "params" : {"data":["Voltage"]},"id" : 16}
 
 
 
@@ -26,7 +26,7 @@ Example JSON requests:
 {"method" : "list_data","id" : 18}
 
 
-{"method" : "reset", "params" : {"data":["Voltage", "Vcc","Load_Power"]},"id" : 22}
+{"method" : "reset", "params" : {"data":["Voltage","Load_Power"]},"id" : 22}
 
 
 {"method" : "broker_status","id" : 19}
@@ -38,7 +38,7 @@ Example JSON requests:
 
 
 
-{"method" : "set", "params" : {"Date":20170829,"Time":145630},"id" : 175}
+{"method" : "set", "params" : {"Date_UTC":20170922,"Time_UTC":130500},"id" : 175}
 
 {"method" : "status", "params" : {"data":["Date","Time"]},"id" : 10}
 

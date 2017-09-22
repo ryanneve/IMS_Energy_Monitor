@@ -11,6 +11,7 @@
 # define STAT_VAL_WIDTH 5	// Used for converting double to string
 # define STAT_VAL_PREC  3	// Used for converting double to string
 
+
 /*
 	class BrokerData is an abstract class for all data objects
 */
@@ -142,5 +143,4 @@ private:
 
 
 void getSampleTimeStr(char splTimeStr[15], bool islong = false);
-
 #endif

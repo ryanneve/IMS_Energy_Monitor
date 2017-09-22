@@ -6,20 +6,14 @@
 
 
 uint16_t ADCData::getADCreading() {
-	uint16_t mV;
-	switch (getChannel()) {
-	case 0: _ads->setMultiplexer(ADS1115_MUX_P0_NG); break;
-	case 1: _ads->setMultiplexer(ADS1115_MUX_P1_NG); break;
-	case 2: _ads->setMultiplexer(ADS1115_MUX_P2_NG); break;
-	case 3: _ads->setMultiplexer(ADS1115_MUX_P3_NG); break;
-	}
-	// Do conversion polling via I2C on this last reading: 
-	mV = _ads->getMilliVolts(true);
+	uint32_t pin_value = _adc->analogRead(_channel,ADC_0);
+	uint32_t max_value = _adc->getMaxValue(ADC_0);
+	uint16_t mV = 3300 * ((double)pin_value/ (double)max_value);
 	_getTimeDelta();
-	// DEBUG
-	//Serial.print("channel:"); Serial.print(channel);
-	//Serial.print(" , value: "); Serial.print(mV); Serial.println("mV");
-	// DEBUG ENDS
+	//Serial.print("pin: "); Serial.print(_channel);
+	//Serial.print(" value: "); Serial.print(pin_value);
+	//Serial.print("/"); Serial.print(max_value);
+	//Serial.print(",in mV = "); Serial.println(mV);
 	return mV;
 }
 
@@ -27,7 +21,7 @@ uint16_t ADCData::getADCreading() {
 double	CurrentData::getData() {
 	//method returns current in Amps
 	// To get current, subtract offset from reading. (Offset is supply_mV * 0.1) then divide the result by 133 to get amps.
-	double Vcc_mV = _vcc->getData() / 1000.0;
+	double Vcc_mV = 3.3;
 	uint16_t current_mV = getADCreading();
 	if (current_mV >= (Vcc_mV / 10.0)) current_mV -= (Vcc_mV / 10.0);
 	else current_mV = 0;
@@ -50,18 +44,6 @@ double VoltageData::getData() {
 	return _data_value;
 }
 
-/*
-double VoltageData2::getData() {
-//method returns voltage in volts
-uint16_t voltage_mV = getADCreading();
-double _v_div = (_h_div->getData() + _l_div->getData())/ _l_div->getData();
-voltage_mV *= _v_div;
-// May want to check if data seems valid
-_setDataValue((double)voltage_mV / 1000.0);
-_checkMinMax();
-return _data_value;
-}
-*/
 
 double PowerData::getData() {
 	// Power is voltage times current. We have _voltage and _current.
