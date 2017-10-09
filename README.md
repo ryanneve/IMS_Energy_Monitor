@@ -3,7 +3,7 @@
 ### What is this repository for? ###
 
 * Teensy based power monitor developed for use on Autonomous Vertical Profilers.
-* Uses ADS1115 16 bit ADC to monitor Vcc, battery voltage, load current and charge current.
+* Uses teensy's built in ADC to monitor Vcc, battery voltage, load current and charge current.
 * Current measured with [ACS715](https://www.pololu.com/file/download/ACS715.pdf?file_id=0J197)
 * Calculates power and energy
 * Uses [teensy's RTC](https://www.pjrc.com/teensy/td_libs_Time.html)
