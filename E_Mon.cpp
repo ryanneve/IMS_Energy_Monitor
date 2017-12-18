@@ -19,13 +19,11 @@ uint16_t ADCData::getADCreading() {
 
 
 double	CurrentData::getData() {
-	//method returns current in Amps
-	// To get current, subtract offset from reading. (Offset is supply_mV * 0.1) then divide the result by 133 to get amps.
-	double Vcc_mV = 3.3;
-	uint16_t current_mV = getADCreading();
-	if (current_mV >= (Vcc_mV / 10.0)) current_mV -= (Vcc_mV / 10.0);
-	else current_mV = 0;
-	double current_A = (double)current_mV / _mV_per_A;
+	// Returns current in Amps. Assumes Vcc = 3.3volts
+	// Vout = (Sensitivity * i + Vcc/2)
+	uint16_t adc_mV = getADCreading();
+	//Serial.printf("ADC current reading is: %d mV", adc_mV);
+	double current_A = ((double)adc_mV  - _offset_mV)/ _mV_per_A;
 	// May want to check if data seems valid 
 	_setDataValue(current_A);
 	_getTimeDelta();
@@ -70,12 +68,18 @@ void PowerData::resetData() {
 }
 
 double EnergyData::getData() {
-	_setDataValue((_power->getValue() * (double)_getTimeDelta()) / (double)MS_PER_HR);
+	// Returns Energy in Wh.
+	// First see what our current power is
+	const double power_W = _power->getValue();
+	// Assume it's constant since last sample and get new energy value
+	const double energy_since_last = (power_W * (double)_getTimeDelta()) / (double)MS_PER_HR;
+	// Now totalize this.
+	_setDataValue(_data_value + energy_since_last);
 	return _data_value;
 }
-bool EnergyData::setData(double power_Wh) {
+bool EnergyData::setData(double energy_Wh) {
 	// In certain instances, like after a reboot, _data_value should be initialized to a non-zero value.
-	_setDataValue(power_Wh);
+	_setDataValue(energy_Wh);
 	_getTimeDelta();
 	return true;
 }

@@ -13,7 +13,7 @@ void printResultStr() {
 
 uint16_t addMsgTime(char *stat_buff, uint16_t  d_idx,const char * tz) {
 	char msgTime[15];
-	getSampleTimeStr(msgTime);
+	setSampleTimeStr(msgTime);
 	d_idx += sprintf(stat_buff + d_idx, ",\"message_time\":{\"value\":%s,\"units\":\"%s\"}", msgTime, tz);
 	return d_idx;
 }
@@ -51,7 +51,7 @@ uint32_t freeRam() {
 }
 
 void printFreeRam(const char * msg) {
-	//Serial.print(F("Free RAM ("));Serial.print(msg);Serial.print("):");Serial.println(freeRam());
+	Serial.print(F("Free RAM ("));Serial.print(msg);Serial.print("):");Serial.println(freeRam());
 }
 
 

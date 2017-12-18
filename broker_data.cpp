@@ -11,7 +11,7 @@ void BrokerData::dataToStr(char * out_str) {
 
 bool StaticData::setData(double new_value) {
 	_data_value = new_value;
-	getSampleTimeStr(_last_sample_time_str);
+	setSampleTimeStr(_last_sample_time_str);
 	return true;
 
 }
@@ -47,7 +47,7 @@ uint32_t DynamicData::_getTimeDelta() {
 	// Works with millis() roll over since we are using unsigned long
 	uint32_t time_delta = current_sample_time - _last_sample_time;
 	_last_sample_time = current_sample_time;
-	getSampleTimeStr(_last_sample_time_str);
+	setSampleTimeStr(_last_sample_time_str);
 	return time_delta;
 }
 
@@ -60,11 +60,16 @@ uint8_t DynamicData::_checkMinMax() {
 	// 3 = new min & max (usally first value)
 	uint8_t newMinMax = 0;
 	if (!isnan(_data_value)) {
+		// We have a real value
 		if ((_data_value > _data_max) | isnan(_data_max)) {
+			Serial.printf("Setting _data_max to "); Serial.print(_data_value);
+			Serial.print(" for "); Serial.println(getName());
 			_data_max = _data_value;
 			newMinMax +=2;
 		}
 		if ((_data_value < _data_min) | isnan(_data_min)) {
+			Serial.print("Setting _data_min to "); Serial.print(_data_value);
+			Serial.print(" for "); Serial.println(getName());
 			_data_min = _data_value;
 			newMinMax +=1;
 		}
@@ -80,7 +85,7 @@ bool DynamicData::_setDataValue(double new_value) {
 	else {
 		_data_value = new_value;
 		_data_changed = true;
-		getSampleTimeStr(_last_sample_time_str);
+		setSampleTimeStr(_last_sample_time_str);
 		_last_sample_time = millis();
 		return true;
 	}
@@ -111,7 +116,7 @@ bool TimeData::setData(double date_or_time) {
 	*/
 	//Serial.print("Processing: "); Serial.println((uint32_t)date_or_time);
 	uint16_t ccyy;
-	uint8_t MM, DD, HH, mm, ss;
+	uint8_t MM, DD, Hrs, mins, secs;
 	_data_value = date_or_time;
 	if (_is_date) {
 		// it's a date
@@ -119,33 +124,35 @@ bool TimeData::setData(double date_or_time) {
 		date_or_time -= (ccyy * 10000);
 		MM = date_or_time / 100;
 		DD = date_or_time - (MM * 100);
-		HH = hour();
-		mm = minute();
-		ss = second();
+		Hrs = hour();
+		mins = minute();
+		secs = second();
 	}
 	else {
 		// it's a time
 		ccyy = year();
 		MM = month();
 		DD = day();
-		HH = date_or_time / 10000;
-		date_or_time -= (HH * 10000);
-		mm = date_or_time / 100;
-		ss = date_or_time - (mm * 100);
+		Hrs = date_or_time / 10000;
+		date_or_time -= (Hrs * 10000);
+		mins = date_or_time / 100;
+		secs = date_or_time - (mins * 100);
 	}
-	//Serial.print("CCYY: "); Serial.println(ccyy);
-	//Serial.print("MM: "); Serial.println(MM);
-	//Serial.print("DD: "); Serial.println(DD);
-	//Serial.print("HH: "); Serial.println(HH);
-	//Serial.print("mm: "); Serial.println(mm);
-	//Serial.print("ss: "); Serial.println(ss);
-	setTime(HH, mm, ss, DD, MM, ccyy);
+	setTime(Hrs, mins, secs, DD, MM, ccyy); // Sets software clock
+	Teensy3Clock.set(now()); // Sets RTC to software clock.
+	//Serial.print("input: "); Serial.println(_data_value);
+	//Serial.print("CCYY: "); Serial.print(ccyy); Serial.print(" = "); Serial.println(year());
+	//Serial.print("MM: "); Serial.print(MM); Serial.print(" = "); Serial.println(month());
+	//Serial.print("DD: "); Serial.print(DD); Serial.print(" = "); Serial.println(day());
+	//Serial.print("HH: "); Serial.print(Hrs); Serial.print(" = "); Serial.println(hour());
+	//Serial.print("mm: "); Serial.print(mins); Serial.print(" = "); Serial.println(minute());
+	//Serial.print("ss: "); Serial.print(secs); Serial.print(" = "); Serial.println(second());
 	return true;
 }
 
 
 
-void getSampleTimeStr(char splTimeStr[15],bool islong) { // CCYYMMDDHHmmss\0
+void setSampleTimeStr(char splTimeStr[15],bool islong) { // CCYYMMDDHHmmss\0
 	/* Set date_time string to current date and time
 	long: "2017-09-06 11:24:23.96"
 	*/

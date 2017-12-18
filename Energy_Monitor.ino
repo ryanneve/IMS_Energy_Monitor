@@ -51,44 +51,42 @@ TO DO
 #include <TimeLib.h>
 #include <aJSON.h>
 
-const uint8_t ADC_CHANNEL_LOAD_CURRENT = PIN_A0;	// ADC0
-const uint8_t ADC_CHANNEL_CHARGE_CURRENT = PIN_A1;	// ADC0
-const uint8_t ADC_CHANNEL_VOLTAGE = PIN_A2;			// ADC1
 
 
-#define ACS715_mV_per_A 133.0
+//#define ACS715_25_mV_per_A 55.0 // This is from the datasheet with Vcc = 3.3v
+
+// Default values of voltage dividers
 #define V_DIV_LOW	 4220.0
 #define V_DIV_HIGH  19100.0
-//#define ADC_CHANNEL_LOAD_CURRENT	0
-//#define ADC_CHANNEL_CHARGE_CURRENT	1
-//#define ADC_CHANNEL_VOLTAGE	2
-#define ADC_CHANNEL_VCC	3
-#define BROKERDATA_OBJECTS 11
+
+//#define ADC_CHANNEL_VCC	3
+//#define BROKERDATA_OBJECTS 11
 #define BROKER_MIN_UPDATE_RATE_MS 500
 #define PARAM_BUFFER_SIZE  200 // should be >~100
+#define MAIN_BUFFER_SIZE 500
+//#define HWSERIAL Serial1 // For teensy, Serial1 is on pins 1 and 2
 
 // define constants
-//const uint8_t ADS1115_ADDRESS = 0x48;
+const uint16_t ACS715_25_mV_per_A = 55.0; // This is from the datasheet with Vcc = 3.3v
+const uint16_t ACS715_25_offset_mV = 3300/2; // This is from the datasheet with Vcc = 3.3v
+const uint16_t ACS722_10U_mV_per_A = 264.0; // This is from the datasheet with Vcc = 3.3v
+const uint16_t ACS722_10U_offset_mV = 0; // This is from the datasheet with Vcc = 3.3v
+const uint8_t ADC_CHANNEL_LOAD_CURRENT		= PIN_A0;	// ADC0_SE5b
+const uint8_t ADC_CHANNEL_CHARGE_CURRENT	= PIN_A1;	// ADC0_SE14
+const uint8_t ADC_CHANNEL_VOLTAGE			= PIN_A2;	// ADC0_SE8/ADC1_SE8
 const uint16_t LOOP_DELAY_TIME_MS = 2000;	// Time in ms to wait between sampling loops.
-//const uint8_t STATVALWIDTH = 5;	// Used for converting double to string
-//const uint8_t STATVALPREC = 3;	// Used for converting double to string
-
-
+const uint8_t BROKERDATA_OBJECTS = 11;
 const char TZ[] = "UTC"; // Time zone is forced to UTC for now.
 
 // Define Objects
-//ADS1115 ads(ADS1115_ADDRESS);
-ADC adc = ADC(); // adc object
-aJsonStream serial_stream(&Serial);
+ADC adc = ADC(); // Teensy adc object
 
 // Someday we might load all this from EEPROM so that the code can be as generic as possible.
 StaticData	volt_div_low("V_div_low", "Ohms", V_DIV_LOW,7,2);
 StaticData	volt_div_high("V_div_high", "Ohms", V_DIV_HIGH,7,2);
-//VoltageData2 v_batt2("Voltage", ads, ADC_CHANNEL_VOLTAGE, volt_div_high, volt_div_low);
 VoltageData v_batt("Voltage", adc, ADC_CHANNEL_VOLTAGE, V_DIV_HIGH, V_DIV_LOW,6,3);
-//VoltageData v_cc("Vcc", ads, ADC_CHANNEL_VCC, 0, 1,5,3);	// No voltage divider
-CurrentData	current_l("Load_Current", adc, ADC_CHANNEL_LOAD_CURRENT, ACS715_mV_per_A,6,3);
-CurrentData	current_c("Charge_Current", adc, ADC_CHANNEL_CHARGE_CURRENT, ACS715_mV_per_A,6,3);
+CurrentData	current_l("Load_Current", adc, ADC_CHANNEL_LOAD_CURRENT, ACS715_25_mV_per_A, ACS715_25_offset_mV,6,3);
+CurrentData	current_c("Charge_Current", adc, ADC_CHANNEL_CHARGE_CURRENT, ACS715_25_mV_per_A, ACS715_25_offset_mV,6,3);
 PowerData	power_l("Load_Power", current_l, v_batt,7,3);
 PowerData	power_c("Charge_Power", current_c, v_batt,7,3);
 EnergyData	energy_l("Load_Energy", power_l,10,3);
@@ -105,6 +103,8 @@ int16_t	json_id = 0;
 bool status_verbose = true; // true is default.
 bool data_map[BROKERDATA_OBJECTS]; // Used to mark broker objects we are interested in.
 char broker_start_time[] = "20000101120000"; // Holds start time
+char in_buffer[MAIN_BUFFER_SIZE]; // Holds incoming data
+uint16_t	in_buffer_idx = 0;
 
 // Constants
 const char ON_NEW[] = "on_new";
@@ -123,7 +123,7 @@ enum json_r_t {
 };
 const char *REQUEST_STRINGS[JSON_REQUEST_COUNT] = { "status","subscribe","unsubscribe","set","list_data","reset","broker_status","" };
 
-
+/*
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -136,19 +136,26 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
-
+*/
 
 void setup() {
-	startup_early_hook(); // Watchdog
+	//startup_early_hook(); // Watchdog
 	// set the Time library to use Teensy 3.0's RTC to keep time
 	setSyncProvider(getTeensy3Time);
-    //Wire.begin();
 	Serial.begin(57600);	//USB
-	while (!Serial);	// Leonardo seems to need this
-	WatchdogReset();
-	Serial.println(F("UNC-IMS Power Monitor 0.66"));
+	//Serial1.begin(57600);	//Debugging
+	// Some delay when starting up serial.
+	uint32_t ulngStart = millis();
+	while (true) {
+		uint32_t ulngDiff = millis() - ulngStart;
+		Serial.print(F("."));
+		delay(100);
+		if (ulngDiff > 5000) break;
+	}
+	Serial.println("UNC-IMS Power Monitor 0.70");
+	//WatchdogReset();
 	//Set up Analog input pins
-	Serial.print("Reading charge current on pin: "); Serial.println(ADC_CHANNEL_CHARGE_CURRENT);
+	Serial.print("Reading charge current on pin:"); Serial.println(ADC_CHANNEL_CHARGE_CURRENT);
 	Serial.print("Reading load current on pin: "); Serial.println(ADC_CHANNEL_LOAD_CURRENT);
 	Serial.print("Reading voltage current on pin: "); Serial.println(ADC_CHANNEL_VOLTAGE);
 	pinMode(ADC_CHANNEL_CHARGE_CURRENT, INPUT);
@@ -160,24 +167,19 @@ void setup() {
 	adc.setResolution(16); //the number of bits of resolution. For single-ended measurements: 8, 10, 12 or 16 bits.
 	adc.setConversionSpeed(ADC_CONVERSION_SPEED::HIGH_SPEED_16BITS); // change the conversion speed
 	adc.setSamplingSpeed(ADC_SAMPLING_SPEED::MED_SPEED); // change the sampling speed
-	Serial.println(adc.getMaxValue(ADC_0));
-	delay(3000);
-	WatchdogReset();
-	//Serial.println(ads.testConnection() ? F("ADS1115 connected") : F("ADS1115  failed"));
-	//ads.initialize();
-	// We're going to do single shot sampling
-	//ads.setMode(ADS1115_MODE_SINGLESHOT);
-	// Slow things down so that we can see that the "poll for conversion" code works
-	//ads.setRate(ADS1115_RATE_8);
-	// Set the gain (PGA) +/- 6.144v
-	// Note that any analog input must be higher than �0.3V and less than VDD +0.3
-	//ads.setGain(ADS1115_PGA_6P144);
-
+	//WatchdogReset();
 	if (timeStatus() != timeSet) {
 		Serial.println("Unable to sync with the RTC");
 	}
 	else {
-		Serial.println("RTC has set the system time");
+		// NEED TO SET Date_UTS and Time_UTC here.
+		double date_to_set = (year() * 10000) + (month() * 100) + day();
+		date_sys.setData(date_to_set);
+		date_to_set = (hour() * 10000) + (minute() * 100) + second();
+		time_sys.setData(date_to_set);
+		Serial.println("RTC has set the system time to:");
+		Serial.print(date_sys.getData()); Serial.print("    ");
+		Serial.print(time_sys.getData()); Serial.println();
 	}
 	// Add parameter objects to brokerobjs[]
 	brokerobjs[0] = &v_batt;
@@ -191,18 +193,26 @@ void setup() {
 	brokerobjs[8] = &volt_div_high;
 	brokerobjs[9] = &date_sys;
 	brokerobjs[10] = &time_sys;
-	getSampleTimeStr(broker_start_time);
-	WatchdogReset();
+	Serial.println("setup almost done");
+	setSampleTimeStr(broker_start_time);
+	Serial.println("setup done");
+	//WatchdogReset();
 }
 
 void loop()
 {
-	printFreeRam("loop0");
-	WatchdogReset();
+	static char in_buffer[MAIN_BUFFER_SIZE]; // Holds incoming data
+	static uint16_t	in_buffer_idx = 0;
+	static int16_t bracket_count = 0; // Keep track of JSON brackets. Beware brackets in quotes.
+	//Serial.print("[");	Serial.print(in_buffer_idx);
+	//Serial.print(",");	Serial.print(bracket_count);
+	//Serial.print("]");
+	//WatchdogReset();
 	//datetime.getData(); // Update clock values.
 	// Process incoming messages
-	processSerial();
-	WatchdogReset();
+	//processSerial(); // Old way, uses streams
+	processInput(in_buffer, in_buffer_idx, bracket_count);
+	//WatchdogReset();
 	// retreive new data from ADC
 	v_batt.getData();
 	current_l.getData();
@@ -210,14 +220,50 @@ void loop()
 	power_l.getData();
 	power_c.getData();
 	energy_l.getData();
-	energy_l.getData();
-	WatchdogReset();
+	energy_c.getData();
+	//WatchdogReset();
 	// See what subscriptions are up
 	if (checkSubscriptions(data_map,brokerobjs,BROKERDATA_OBJECTS) > 0) processSubscriptions(data_map, brokerobjs, BROKERDATA_OBJECTS,::TZ);
-	WatchdogReset();
+	//WatchdogReset();
 	delay(LOOP_DELAY_TIME_MS); // MAY BE WORTH LOOKING IN TO LOWERING POWER CONSUMPTION HERE
 }
 
+void processInput(char in_buffer[], uint16_t &in_buffer_idx, int16_t &b_count) {
+	/* Adds characters to in_buffer and increments in_buffer_idx
+	returns change in bracket_count
+	*/
+	bool found_msg_end = false;
+	while (Serial.available() && found_msg_end == false) {
+		char in_char = Serial.read();
+		if (in_char == '{') b_count++;
+		if (in_char == '}') b_count--;
+		if (in_char == '\r') {
+			found_msg_end = true;
+			Serial.print("CR");
+		}
+		if (in_char == '\n') {
+			Serial.print("LF");
+			in_char = 0;
+		}
+		if (in_char) {
+			in_buffer[in_buffer_idx] = in_char;
+			in_buffer_idx++;
+		}
+	}
+	if (found_msg_end) {
+		if (b_count != 0) {
+			// This is an error
+			Serial.println("Error: Bracket Mismatch");
+			in_buffer_idx = 0;
+			b_count = 0;
+		}
+		Serial.println("Found message");
+		aJsonObject *serial_msg = aJson.parse(in_buffer);
+		processJson(serial_msg);
+		in_buffer_idx = 0;
+		b_count = 0;
+	}
+}
 uint16_t getMessageType(aJsonObject** json_in_msg,int16_t * json_id, const uint8_t json_req_count) {
 	// Extract method and ID from message.
 	//printFreeRam("gMT start");
@@ -237,10 +283,6 @@ uint16_t getMessageType(aJsonObject** json_in_msg,int16_t * json_id, const uint8
 	//printFreeRam("gMT end3");
 	return json_method;
 }
-
-
-
-
 
 uint8_t processStatus(aJsonObject *json_in_msg,bool * statusverbose, BrokerData *broker_objs[], const uint8_t broker_obj_count) {
 	//printFreeRam("pBS start");
@@ -330,10 +372,6 @@ void generateStatusMessage() {
 	Serial.println(statusBuffer);
 	//printFreeRam("gSM end");
 }
-
-
-
-
 
 uint8_t processBrokerUnubscribe(aJsonObject *json_in_msg) {
 	/*Processes an un-subscribe message
@@ -641,8 +679,6 @@ uint8_t processReset(aJsonObject *json_in_msg) {
 	return reset_matches_found;
 }
 
-
-
 void processBrokerStatus() {
 	/*
 	{
@@ -684,6 +720,7 @@ void clearDataMap() {
 }
 
 // Move this to separate local library at some point.
+/*
 bool processSerial() {
 	printFreeRam("pSer start");
 	if (serial_stream.available()) {
@@ -696,64 +733,10 @@ bool processSerial() {
 		uint8_t message_type;
 		aJsonObject *serial_msg = aJson.parse(&serial_stream);
 		printFreeRam("pSer s_msg");
-		
-		if (serial_msg != NULL) {
-			/*
-			Serial.println(F("PROCESSING MESSAGE!"));
-			Serial.print(F("AMsg: ")); 
-			char *aJsonPtr = aJson.print(serial_msg); 
-			Serial.println(aJsonPtr);
-			free(aJsonPtr); // So we don't have a memory leak
-			*/
-			message_type = getMessageType(&serial_msg, &json_id, ::JSON_REQUEST_COUNT);
-			printFreeRam("pSer gMT");
-			//printFreeRam("pSer 1");
-			switch (message_type) {
-				case (BROKER_STATUS): // Get status of items listed in jsonrpc_params
-					if (processStatus(serial_msg,&::status_verbose,::brokerobjs,BROKERDATA_OBJECTS)) {
-						printFreeRam("pSer status");
-						generateStatusMessage();
-					}
-					break;
-				case (BROKER_SUBSCRIBE): 
-					processBrokerSubscribe(serial_msg);
-					printFreeRam("pSer sub");
-					break;
-				case (BROKER_UNSUBSCRIBE): 
-					processBrokerUnubscribe(serial_msg); 
-					break;
-				case (BROKER_SET): 
-					processSet(serial_msg);
-					break;
-				case (BROKER_LIST_DATA): 
-					processListData();
-					break;
-				case (BROKER_RESET):
-					processReset(serial_msg);
-					break;
-				case (BROKER_B_STATUS):
-					processBrokerStatus();
-					break;
-			}
-		}
-		else {
-			aJsonObject *response = aJson.createObject();
-			aJsonObject *error = aJson.createObject();
-			aJson.addItemToObject(response, "jsonrpc", aJson.createItem("2.0"));
-			aJson.addItemToObject(response, "id", aJson.createNull());
-			aJson.addItemToObject(error, "code", aJson.createItem(-32700));
-			aJson.addItemToObject(error, "message", aJson.createItem("Parse error."));
-			aJson.addItemToObject(response, "error", error);
-			aJson.deleteItem(error);
-			aJson.deleteItem(response);
-		}
-		serial_stream.flush(); // No longer need data
-		//printFreeRam("pSer near end 3");
-		if (serial_msg) {
-			//Serial.println(F("Deleting serial_msg"));
-			aJson.deleteItem(serial_msg); // done with incoming message
-		}
+		processJson(serial_msg);
+	
 		//printFreeRam("pSer end 3");
+		serial_stream.flush(); // No longer need data
 		return true;
 	}
 	else {
@@ -761,6 +744,69 @@ bool processSerial() {
 		return false;
 	}
 
+}
+*/
+
+void processJson(aJsonObject *serial_msg){
+	if (serial_msg != NULL) {
+		
+		Serial.println(F("PROCESSING MESSAGE!"));
+		Serial.print(F("AMsg: "));
+		char *aJsonPtr = aJson.print(serial_msg);
+		Serial.println(aJsonPtr);
+		free(aJsonPtr); // So we don't have a memory leak
+		
+		uint8_t message_type;
+		message_type = getMessageType(&serial_msg, &json_id, ::JSON_REQUEST_COUNT);
+		//printFreeRam("pSer gMT");
+		//printFreeRam("pSer 1");
+		switch (message_type) {
+		case (BROKER_STATUS): // Get status of items listed in jsonrpc_params
+			if (processStatus(serial_msg, &::status_verbose, ::brokerobjs, BROKERDATA_OBJECTS)) {
+				//printFreeRam("pSer status");
+				generateStatusMessage();
+			}
+			break;
+		case (BROKER_SUBSCRIBE):
+			processBrokerSubscribe(serial_msg);
+			//printFreeRam("pSer sub");
+			break;
+		case (BROKER_UNSUBSCRIBE):
+			processBrokerUnubscribe(serial_msg);
+			break;
+		case (BROKER_SET):
+			processSet(serial_msg);
+			break;
+		case (BROKER_LIST_DATA):
+			processListData();
+			break;
+		case (BROKER_RESET):
+			processReset(serial_msg);
+			break;
+		case (BROKER_B_STATUS):
+			processBrokerStatus();
+			break;
+		default:
+			// NEED TO GENERATE AN ERROR HERE
+			break;
+		}
+	}
+	else {
+		aJsonObject *response = aJson.createObject();
+		aJsonObject *error = aJson.createObject();
+		aJson.addItemToObject(response, "jsonrpc", aJson.createItem("2.0"));
+		aJson.addItemToObject(response, "id", aJson.createNull());
+		aJson.addItemToObject(error, "code", aJson.createItem(-32700));
+		aJson.addItemToObject(error, "message", aJson.createItem("Parse error."));
+		aJson.addItemToObject(response, "error", error);
+		aJson.deleteItem(error);
+		aJson.deleteItem(response);
+	}
+						   //printFreeRam("pSer near end 3");
+	if (serial_msg) {
+		//Serial.println(F("Deleting serial_msg"));
+		aJson.deleteItem(serial_msg); // done with incoming message
+	}
 }
 
 const char * BoolToString(const bool b)
@@ -772,7 +818,6 @@ time_t getTeensy3Time()
 {
 	return Teensy3Clock.get();
 }
-
 
 void WatchdogReset()
 {

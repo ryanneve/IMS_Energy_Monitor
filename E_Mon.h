@@ -50,13 +50,15 @@ class CurrentData is a class for all data objects which represent a current obje
 */
 class CurrentData : public ADCData {
 public:
-	CurrentData(const char *name, ADC &adc, uint8_t ADCchannel, double mV_per_A, uint8_t resp_width, uint8_t resp_dec) : ADCData(name, "A", adc, ADCchannel, resp_width, resp_dec) {
+	CurrentData(const char *name, ADC &adc, uint8_t ADCchannel, double mV_per_A, double offset_mV, uint8_t resp_width, uint8_t resp_dec) : ADCData(name, "A", adc, ADCchannel, resp_width, resp_dec) {
 		_mV_per_A = mV_per_A;
+		_offset_mV = offset_mV;
 	}
 	double	getData();
 	bool	setData(double set_value) { return false; }
 private:
 	double	_mV_per_A;
+	double	_offset_mV;
 };
 
 /*

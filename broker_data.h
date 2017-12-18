@@ -143,5 +143,5 @@ private:
 };
 
 
-void getSampleTimeStr(char splTimeStr[15], bool islong = false);
+void setSampleTimeStr(char splTimeStr[15], bool islong = false);
 #endif
