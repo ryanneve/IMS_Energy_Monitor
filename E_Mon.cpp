@@ -22,8 +22,8 @@ double	CurrentData::getData() {
 	// Returns current in Amps. Assumes Vcc = 3.3volts
 	// Vout = (Sensitivity * i + Vcc/2)
 	uint16_t adc_mV = getADCreading();
-	//Serial.printf("ADC current reading is: %d mV", adc_mV);
-	double current_A = ((double)adc_mV  - _offset_mV)/ _mV_per_A;
+	//Serial.printf("ADC current reading is: %d mV, offset is %d and sens is %d\n", adc_mV, _offset_mV, _mV_per_A);
+	double current_A = (double)(adc_mV  - _offset_mV) / (double)_mV_per_A;
 	// May want to check if data seems valid 
 	_setDataValue(current_A);
 	_getTimeDelta();
@@ -31,6 +31,65 @@ double	CurrentData::getData() {
 	return _data_value;
 }
 
+uint16_t CurrentData::lookupACSsens(ACS_MODELS model) {
+	// Returns mV/A for this IC.
+	switch (model) {
+		case ACS711_12B: return 110;
+		case ACS711_25B: return 55;
+		case ACS715_20A: return 185;
+		case ACS715_30A: return 133;
+		case ACS722_05B: 
+		case ACS722_10U: return 264;
+		case ACS722_10B: 
+		case ACS722_20U: return 132;
+		case ACS722_20B: 
+		case ACS722_40U: return 66;
+		case ACS722_40B: return 33;
+		default: return 0;
+	}
+	return 0;
+}
+
+uint16_t CurrentData::lookupACSoffset(ACS_MODELS model, uint16_t Vcc_mV) {
+	// Returns mV offset for this IC.
+	uint16_t offset_mV = 0;
+	switch (model) {
+		case ACS711_12B: offset_mV = Vcc_mV / 2; break;
+		case ACS711_25B: offset_mV = Vcc_mV / 2; break;
+		case ACS715_20A: Vcc_mV * 0.1; break;
+		case ACS715_30A: Vcc_mV * 0.1; break;
+		case ACS722_05B: offset_mV = Vcc_mV / 2; break;
+		case ACS722_10U: offset_mV = Vcc_mV * 0.1; break;
+		case ACS722_10B: offset_mV = Vcc_mV / 2; break;
+		case ACS722_20U: offset_mV = Vcc_mV * 0.1; break;
+		case ACS722_20B: offset_mV = Vcc_mV / 2; break;
+		case ACS722_40U: offset_mV = Vcc_mV * 0.1; break;
+		case ACS722_40B: offset_mV = Vcc_mV / 2; break;
+	}
+	Serial.printf("Offset = %d\n",offset_mV);
+	return offset_mV;
+}
+
+int8_t CurrentData::lookupACSfunction(ACS_MODELS model) {
+	// returns 0 if function is input, 1 if it is an output, -1 if unused or unknown
+	switch (model) {
+		// Pin indicates current FAULT when low
+		case ACS711_12B:
+		case ACS711_25B: return 0;
+		// Pin is used passivly as FILTER
+		case ACS715_20A:
+		case ACS715_30A: return -1;
+		// this chip has BW_SEL (bandwidth selection). Ground = 80kHz, Vcc = 20 kHz.
+		case ACS722_05B:
+		case ACS722_10U:
+		case ACS722_10B:
+		case ACS722_20U:
+		case ACS722_20B:
+		case ACS722_40U:
+		case ACS722_40B: return 1;
+	}
+	return -1;
+}
 
 double VoltageData::getData() {
 	//method returns voltage in volts
@@ -83,6 +142,8 @@ bool EnergyData::setData(double energy_Wh) {
 	_getTimeDelta();
 	return true;
 }
+
+
 
 
 /*
