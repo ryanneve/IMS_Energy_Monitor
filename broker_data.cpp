@@ -62,14 +62,18 @@ uint8_t DynamicData::_checkMinMax() {
 	if (!isnan(_data_value)) {
 		// We have a real value
 		if ((_data_value > _data_max) | isnan(_data_max)) {
-			Serial.printf("Setting _data_max to "); Serial.print(_data_value);
-			Serial.print(" for "); Serial.println(getName());
+			if (true) {
+				Serial1.printf("Setting _data_max to "); Serial1.print(_data_value);
+				Serial1.print(" for "); Serial1.println(getName());
+			}
 			_data_max = _data_value;
 			newMinMax +=2;
 		}
 		if ((_data_value < _data_min) | isnan(_data_min)) {
-			Serial.print("Setting _data_min to "); Serial.print(_data_value);
-			Serial.print(" for "); Serial.println(getName());
+			if (true) {
+				Serial1.print("Setting _data_min to "); Serial1.print(_data_value);
+				Serial1.print(" for "); Serial1.println(getName());
+			}
 			_data_min = _data_value;
 			newMinMax +=1;
 		}
@@ -92,8 +96,6 @@ bool DynamicData::_setDataValue(double new_value) {
 
 }
 
-
-
 double TimeData::getData() {
 	double data_out;
 	if (_is_date) {
@@ -114,7 +116,7 @@ bool TimeData::setData(double date_or_time) {
 	/* date_or_time format is ccyymmdd or hhmmss
 	Could probably check for valid values before setting.
 	*/
-	//Serial.print("Processing: "); Serial.println((uint32_t)date_or_time);
+	//Serial1.print("Processing: "); Serial1.println((uint32_t)date_or_time);
 	uint16_t ccyy;
 	uint8_t MM, DD, Hrs, mins, secs;
 	_data_value = date_or_time;
@@ -140,17 +142,22 @@ bool TimeData::setData(double date_or_time) {
 	}
 	setTime(Hrs, mins, secs, DD, MM, ccyy); // Sets software clock
 	Teensy3Clock.set(now()); // Sets RTC to software clock.
-	//Serial.print("input: "); Serial.println(_data_value);
-	//Serial.print("CCYY: "); Serial.print(ccyy); Serial.print(" = "); Serial.println(year());
-	//Serial.print("MM: "); Serial.print(MM); Serial.print(" = "); Serial.println(month());
-	//Serial.print("DD: "); Serial.print(DD); Serial.print(" = "); Serial.println(day());
-	//Serial.print("HH: "); Serial.print(Hrs); Serial.print(" = "); Serial.println(hour());
-	//Serial.print("mm: "); Serial.print(mins); Serial.print(" = "); Serial.println(minute());
-	//Serial.print("ss: "); Serial.print(secs); Serial.print(" = "); Serial.println(second());
+	 /*
+	 if (S1DEBUG) {
+		Serial1.print("input: "); Serial1.println(_data_value);
+		Serial1.print("CCYY: ");  Serial1.print(ccyy); Serial1.print(" = "); Serial1.println(year());
+		Serial1.print("MM: ");    Serial1.print(MM);   Serial1.print(" = "); Serial1.println(month());
+		Serial1.print("DD: ");    Serial1.print(DD);   Serial1.print(" = "); Serial1.println(day());
+		Serial1.print("HH: ");    Serial1.print(Hrs);  Serial1.print(" = "); Serial1.println(hour());
+		Serial1.print("mm: ");    Serial1.print(mins); Serial1.print(" = "); Serial1.println(minute());
+		Serial1.print("ss: ");    Serial1.print(secs); Serial1.print(" = "); Serial1.println(second());
+	
+	}
+	*/
 	return true;
 }
 
-
+// 
 
 void setSampleTimeStr(char splTimeStr[15],bool islong) { // CCYYMMDDHHmmss\0
 	/* Set date_time string to current date and time

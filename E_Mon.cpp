@@ -10,10 +10,14 @@ uint16_t ADCData::getADCreading() {
 	uint32_t max_value = _adc->getMaxValue(ADC_0);
 	uint16_t mV = 3300 * ((double)pin_value/ (double)max_value);
 	_getTimeDelta();
-	//Serial.print("pin: "); Serial.print(_channel);
-	//Serial.print(" value: "); Serial.print(pin_value);
-	//Serial.print("/"); Serial.print(max_value);
-	//Serial.print(",in mV = "); Serial.println(mV);
+	/*
+	if (S1DEBUG) {
+		Serial1.print("pin: "); Serial1.print(_channel);
+		Serial1.print(" value: "); Serial1.print(pin_value);
+		Serial1.print("/"); Serial1.print(max_value);
+		Serial1.print(",in mV = "); Serial1.println(mV);
+	}
+	*/
 	return mV;
 }
 
@@ -22,7 +26,7 @@ double	CurrentData::getData() {
 	// Returns current in Amps. Assumes Vcc = 3.3volts
 	// Vout = (Sensitivity * i + Vcc/2)
 	uint16_t adc_mV = getADCreading();
-	//Serial.printf("ADC current reading is: %d mV, offset is %d and sens is %d\n", adc_mV, _offset_mV, _mV_per_A);
+	//Serial1.printf("ADC current reading is: %d mV, offset is %d and sens is %d\n", adc_mV, _offset_mV, _mV_per_A);
 	double current_A = (double)(adc_mV  - _offset_mV) / (double)_mV_per_A;
 	// May want to check if data seems valid 
 	_setDataValue(current_A);
@@ -66,7 +70,7 @@ uint16_t CurrentData::lookupACSoffset(ACS_MODELS model, uint16_t Vcc_mV) {
 		case ACS722_40U: offset_mV = Vcc_mV * 0.1; break;
 		case ACS722_40B: offset_mV = Vcc_mV / 2; break;
 	}
-	Serial.printf("Offset = %d\n",offset_mV);
+	if (true) Serial1.printf("Offset = %d\n",offset_mV);
 	return offset_mV;
 }
 

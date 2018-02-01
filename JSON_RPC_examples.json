@@ -33,6 +33,9 @@ Example JSON requests:
 
 {"method" : "subscribe", "params" : {"data":["Load_Energy", "Charge_Energy"],"style":"terse","updates":"on_new","min_update_ms":5000,"max_update_ms":15000},"id" : 15}
 
+{"method" : "unsubscribe", "params" : {"data":["Load_Power", "Charge_Power"]},"id" : 16}
+
+
 {"method" : "unsubscribe", "params" : {"data":["Voltage"]},"id" : 16}
 
 {"method" : "reset", "params" : {"data":["Load_Energy","Charge_Energy"]},"id" : 22}
