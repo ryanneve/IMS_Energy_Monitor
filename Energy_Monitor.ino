@@ -45,7 +45,7 @@ TO DO
 //#include <RingBuffer.h>
 
 #define S1DEBUG 1
-#define EM_VERSION 0.73
+#define EM_VERSION 0.74
 
 
 
@@ -55,7 +55,7 @@ TO DO
 // Default values of voltage dividers
 #define V_DIV_LOW	 4220.0
 #define V_DIV_HIGH  19100.0
-#define BROKER_MIN_UPDATE_RATE_MS 500
+#define BROKER_MIN_UPDATE_RATE_MS 2000
 #define MAIN_BUFFER_SIZE 1500
 
 
@@ -476,7 +476,7 @@ uint8_t processBrokerSubscribe(aJsonObject *json_in_msg) {
 		"data":["Voltage", "Vcc"],
 		"style":"terse",
 		"updates":"on_change",
-		"min_update_rate":1000}
+		"min_update_ms":1000}
 	"id" : 14}
 	*/
 	printFreeRam("pBSub start");
@@ -586,8 +586,8 @@ uint8_t processBrokerSubscribe(aJsonObject *json_in_msg) {
 	}
 	// Now finish output
 	// Should add update rates....
-	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"max_update_rate\":%lu", subscribe_max_update_ms);
-	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"min_update_rate\":%lu", subscribe_min_update_ms);
+	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"max_update_ms\":%lu", subscribe_max_update_ms);
+	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"min_update_ms\":%lu", subscribe_min_update_ms);
 	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"updates\":\"%s\"", subscribe_on_change?ON_CHANGE:ON_NEW); //ON_NEW ON_CHANGE
 	addMsgTime(out_buffer, out_buffer_idx,::TZ);
 	addMsgId(out_buffer, out_buffer_idx,json_id);
@@ -678,13 +678,13 @@ void processListData() {
 		out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "{\"units\":\"%s\",", ::brokerobjs[broker_data_idx]->getUnit());
 		out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "\"type\":%s}", param_type);
 		first = false;
-		if (S1DEBUG) {
-			Serial1.print(out_buffer_idx);
-			Serial1.print(" - ");
-			Serial1.println(out_buffer);
-		}
 	}
-	addMsgId(out_buffer, out_buffer_idx,json_id);
+	addMsgId(out_buffer, out_buffer_idx, json_id);
+	if (S1DEBUG) {
+		Serial1.print(out_buffer_idx);
+		Serial1.print(" - ");
+		Serial1.println(out_buffer);
+	}
 	Serial.println(out_buffer);
 }
 
