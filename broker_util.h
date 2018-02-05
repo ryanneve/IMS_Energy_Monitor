@@ -13,7 +13,7 @@
 
 
 uint16_t	printResultStr(char *stat_buff, uint16_t  d_idx);
-uint16_t	addMsgTime(char *stat_buff, uint16_t  d_idx, const char * tz);
+uint16_t	addMsgTime(char *stat_buff, uint16_t  d_idx, const char * tz, bool has_id);
 uint16_t	addMsgId(char *stat_buff, uint16_t  d_idx, const int16_t json_id);
 
 void		printFreeRam(const char * msg);

@@ -25,6 +25,8 @@ Example JSON requests:
 
 {"method" : "status", "params" : {"data":["Load_Energy","Charge_Energy"],"style":"terse"},"id" : 134}
 
+ {"params":{"style":"verbose","data":["Charge_Power","V_div_high","Load_Energy","Load_Current","Time_UTC","Date_UTC","Load_Power","Voltage","V_div_low","Charge_Current","Charge_Energy"]},"method":"status","id":1764}
+
 {"method" : "subscribe", "params" : {"data":["Voltage"],"style":"terse","updates":"on_new","min_update_ms":4000},"id" : 14}
 
 {"method" : "subscribe", "params" : {"data":["Voltage"],"style":"verbose","updates":"on_change","min_update_ms":1000,"max_update_ms":5000},"id" : 24}

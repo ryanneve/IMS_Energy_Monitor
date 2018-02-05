@@ -11,10 +11,11 @@ uint16_t printResultStr(char *stat_buff, uint16_t  d_idx) {
 	return d_idx;
 }
 
-uint16_t addMsgTime(char *stat_buff, uint16_t  d_idx,const char * tz) {
+uint16_t addMsgTime(char *stat_buff, uint16_t  d_idx,const char * tz,bool hasID) {
 	char msgTime[15];
 	setSampleTimeStr(msgTime);
-	d_idx += sprintf(stat_buff + d_idx, ",\"message_time\":{\"value\":%s,\"units\":\"%s\"}}", msgTime, tz);
+	d_idx += sprintf(stat_buff + d_idx, ",\"message_time\":{\"value\":%s,\"units\":\"%s\"}", msgTime, tz);
+	if (!hasID) d_idx += sprintf(stat_buff + d_idx, "}}");
 	return d_idx;
 }
 

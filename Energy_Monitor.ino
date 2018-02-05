@@ -236,6 +236,49 @@ void loop()
 	delay(LOOP_DELAY_TIME_MS); // MAY BE WORTH LOOKING IN TO LOWERING POWER CONSUMPTION HERE
 }
 
+
+void processSubscriptions(const bool datamap[], BrokerData *broker_objs[], const uint8_t broker_obj_count) {
+	/* Based on settings in data_map, generates a subscrition message
+	Currently uses aJson to generate message, but this may be un-necessary
+	*/
+
+	char out_buffer[MAIN_BUFFER_SIZE]; // Holds outgoing data
+	uint16_t out_buffer_idx = 0;
+	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "{\"method\":\"subscription\",");
+	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "\"params\":{");
+	bool first = true;
+	for (uint8_t obj_no = 0; obj_no < broker_obj_count; obj_no++) {
+		if (datamap[obj_no] == true) {
+			broker_objs[obj_no]->getData(); // Update values
+			char dataStr[20];	// HOLDS A STRING REPRESENTING A SINGLE VALUE
+			if (!first) out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",");
+			else first = false;
+			out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "\"%s\":{", broker_objs[obj_no]->getName());
+			broker_objs[obj_no]->dataToStr(dataStr);
+			out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "\"value\":%s", dataStr);
+			if (broker_objs[obj_no]->isVerbose()) {
+				out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"units\":\"%s\"", broker_objs[obj_no]->getUnit());
+				// Only report min and max if they exist
+				double min_d = broker_objs[obj_no]->getMin();
+				double max_d = broker_objs[obj_no]->getMax();
+				if (min_d == min_d) out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"min\":\"%f\"", min_d);
+				if (max_d == max_d) out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"max\":\"%f\"", max_d);
+				out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"sample_time\":\"%s\"", broker_objs[obj_no]->getSplTimeStr());
+			}
+			out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "}"); // Close out this parameter
+		}
+	}
+	out_buffer_idx = addMsgTime(out_buffer, out_buffer_idx, ::TZ,false);
+	Serial.println(out_buffer);
+	if (S1DEBUG) {
+		Serial1.print(out_buffer_idx);
+		Serial1.print(" - ");
+		Serial1.println(out_buffer);
+	}
+	//printFreeRam("pSub end");
+}
+
+
 bool processInput(char in_buffer[], uint16_t &in_buffer_idx, int16_t &b_count) {
 	/* Adds characters to in_buffer, increments in_buffer_idx, and keeps track of curly brackets
 	returns true if complete message found. Message is complete when:
@@ -279,6 +322,7 @@ bool processInput(char in_buffer[], uint16_t &in_buffer_idx, int16_t &b_count) {
 		else if (in_char) {
 			in_buffer[in_buffer_idx] = in_char;
 			in_buffer_idx++;
+			in_buffer[in_buffer_idx] = 0; // So we end with a null
 		}
 	}
 	if (found_msg_end ) {
@@ -290,7 +334,7 @@ bool processInput(char in_buffer[], uint16_t &in_buffer_idx, int16_t &b_count) {
 			found_msg_end = false;
 		}
 		else if (S1DEBUG) {
-			Serial1.print("Found message:");
+			Serial1.print("Found JSON message:");
 			Serial1.println(in_buffer);
 		}
 	}
@@ -301,11 +345,6 @@ void processJson(aJsonObject *serial_msg) {
 	/* processes JSON message in serial_msg*/
 	if (serial_msg != NULL) {
 		char *aJsonPtr = aJson.print(serial_msg);
-		if (S1DEBUG) {
-			Serial1.println(F("PROCESSING MESSAGE!"));
-			Serial1.print(F("AMsg: "));
-			Serial1.println(aJsonPtr);
-		}
 		free(aJsonPtr); // So we don't have a memory leak
 		// DEBUG END
 		uint8_t message_type;
@@ -367,13 +406,13 @@ void processJson(aJsonObject *serial_msg) {
 
 uint16_t getMessageType(aJsonObject** json_in_msg,int16_t * json_id, const uint8_t json_req_count) {
 	// Extract method and ID from message.
-	//printFreeRam("gMT start");
 	uint8_t json_method = BROKER_ERROR;
-
 	aJsonObject *jsonrpc_method = aJson.getObjectItem(*json_in_msg, "method");
 	for (uint8_t j_method = 0; j_method < json_req_count; j_method++) {
 		if (!strcmp(jsonrpc_method->valuestring, ::REQUEST_STRINGS[j_method])) {
-			//Serial1.print(F("JSON request: "));Serial1.println(REQUEST_STRINGS[j_method]);
+			if (S1DEBUG) {
+				Serial1.print(F("JSON request: ")); Serial1.println(REQUEST_STRINGS[j_method]);
+			}
 			json_method = j_method;
 			break;
 		}
@@ -381,7 +420,6 @@ uint16_t getMessageType(aJsonObject** json_in_msg,int16_t * json_id, const uint8
 	// Get ID here
 	aJsonObject *jsonrpc_id = aJson.getObjectItem(*json_in_msg, "id");
 	*json_id = jsonrpc_id->valueint;
-	//printFreeRam("gMT end3");
 	return json_method;
 }
 
@@ -463,8 +501,13 @@ uint8_t processBrokerUnubscribe(aJsonObject *json_in_msg) {
 	}
 	// Now finish output
 	// Should add update rates....
-	addMsgId(out_buffer, out_buffer_idx, json_id);
+	out_buffer_idx = addMsgId(out_buffer, out_buffer_idx, json_id);
 	Serial.println(out_buffer);
+	if (S1DEBUG) {
+		Serial1.print(out_buffer_idx);
+		Serial1.print(" - ");
+		Serial1.println(out_buffer);
+	}
 	return unsubscribe_matches_found;
 }
 
@@ -589,9 +632,14 @@ uint8_t processBrokerSubscribe(aJsonObject *json_in_msg) {
 	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"max_update_ms\":%lu", subscribe_max_update_ms);
 	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"min_update_ms\":%lu", subscribe_min_update_ms);
 	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"updates\":\"%s\"", subscribe_on_change?ON_CHANGE:ON_NEW); //ON_NEW ON_CHANGE
-	addMsgTime(out_buffer, out_buffer_idx,::TZ);
-	addMsgId(out_buffer, out_buffer_idx,json_id);
+	out_buffer_idx = addMsgTime(out_buffer, out_buffer_idx,::TZ,true);
+	out_buffer_idx = addMsgId(out_buffer, out_buffer_idx,json_id);
 	Serial.println(out_buffer);
+	if (S1DEBUG) {
+		Serial1.print(out_buffer_idx);
+		Serial1.print(" - ");
+		Serial1.println(out_buffer);
+	}
 	return subscribe_matches_found;
 }
 
@@ -653,9 +701,14 @@ uint8_t processSet(aJsonObject *json_in_msg) {
 	}
 	// Now finish output
 	// Should add update rates....
-	addMsgTime(out_buffer, out_buffer_idx,::TZ);
-	addMsgId(out_buffer, out_buffer_idx,json_id);
+	out_buffer_idx = addMsgTime(out_buffer, out_buffer_idx,::TZ,true);
+	out_buffer_idx = addMsgId(out_buffer, out_buffer_idx,json_id);
 	Serial.println(out_buffer);
+	if (S1DEBUG) {
+		Serial1.print(out_buffer_idx);
+		Serial1.print(" - ");
+		Serial1.println(out_buffer);
+	}
 	return parameters_set;
 }
 
@@ -679,13 +732,16 @@ void processListData() {
 		out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "\"type\":%s}", param_type);
 		first = false;
 	}
-	addMsgId(out_buffer, out_buffer_idx, json_id);
+	//Add message_time
+	if (!first) out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",");
+	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "\"message_time\":{\"units\":\"UTC\",\"type\":\"RO\"}");
+	out_buffer_idx = addMsgId(out_buffer, out_buffer_idx, json_id);
+	Serial.println(out_buffer);
 	if (S1DEBUG) {
 		Serial1.print(out_buffer_idx);
 		Serial1.print(" - ");
 		Serial1.println(out_buffer);
 	}
-	Serial.println(out_buffer);
 }
 
 uint8_t processReset(aJsonObject *json_in_msg) {
@@ -728,9 +784,14 @@ uint8_t processReset(aJsonObject *json_in_msg) {
 		if (found == false) out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "\"status\":\"error\"}"); // There should be more to this, but that's all for now.
 		jsonrpc_data_item = jsonrpc_data_item->next; // Set pointer for jsonrpc_data_item to next item.
 	}
-	addMsgTime(out_buffer, out_buffer_idx,::TZ);
-	addMsgId(out_buffer, out_buffer_idx,::json_id);
+	out_buffer_idx = addMsgTime(out_buffer, out_buffer_idx,::TZ,true);
+	out_buffer_idx = addMsgId(out_buffer, out_buffer_idx,::json_id);
 	Serial.println(out_buffer);
+	if (S1DEBUG) {
+		Serial1.print(out_buffer_idx);
+		Serial1.print(" - ");
+		Serial1.println(out_buffer);
+	}
 	return reset_matches_found;
 }
 
@@ -765,9 +826,14 @@ void processBrokerStatus() {
 	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"start_time\":%s", ::broker_start_time);
 	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"last_data_time\":%s", ::v_batt.getSplTimeStr());
 	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"last_db_time\":\"None\"");
-	addMsgTime(out_buffer, out_buffer_idx,::TZ);
-	addMsgId(out_buffer, out_buffer_idx,::json_id);
+	out_buffer_idx = addMsgTime(out_buffer, out_buffer_idx,::TZ,true);
+	out_buffer_idx = addMsgId(out_buffer, out_buffer_idx,::json_id);
 	Serial.println(out_buffer);
+	if (S1DEBUG) {
+		Serial1.print(out_buffer_idx);
+		Serial1.print(" - ");
+		Serial1.println(out_buffer);
+	}
 }
 
 void generateStatusMessage() {
@@ -816,14 +882,14 @@ void generateStatusMessage() {
 			first = false;
 		}
 	}
-	addMsgTime(out_buffer, out_buffer_idx, ::TZ);
-	addMsgId(out_buffer, out_buffer_idx, json_id);
+	out_buffer_idx = addMsgTime(out_buffer, out_buffer_idx, ::TZ,true);
+	out_buffer_idx = addMsgId(out_buffer, out_buffer_idx, json_id);
+	Serial.println(out_buffer);
 	if (S1DEBUG) {
 		Serial1.print(out_buffer_idx);
-		Serial1.print(" status:");
+		Serial1.print(" - ");
 		Serial1.println(out_buffer);
 	}
-	Serial.println(out_buffer);
 }
 
 void clearDataMap() {
@@ -851,44 +917,4 @@ void WatchdogReset()
 	interrupts();
 	// if you don't refresh the watchdog timer before it runs out, the system will be rebooted
 	delay(1); // the smallest delay needed between each refresh is 1ms. anything faster and it will also reboot.
-}
-
-void processSubscriptions(const bool datamap[], BrokerData *broker_objs[], const uint8_t broker_obj_count) {
-	/* Based on settings in data_map, generates a subscrition message
-	Currently uses aJson to generate message, but this may be un-necessary
-	*/
-
-	char out_buffer[MAIN_BUFFER_SIZE]; // Holds outgoing data
-	uint16_t out_buffer_idx = 0;
-	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "{\"method\":\"subscription\",");
-	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "\"params\":{");
-	bool first = true;
-	for (uint8_t obj_no = 0; obj_no < broker_obj_count; obj_no++) {
-		if (datamap[obj_no] == true) {
-			broker_objs[obj_no]->getData(); // Update values
-			char dataStr[20];	// HOLDS A STRING REPRESENTING A SINGLE VALUE
-			if (!first) out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",");
-			else first = false;
-			out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "\"%s\":{", broker_objs[obj_no]->getName());
-			broker_objs[obj_no]->dataToStr(dataStr);
-			out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "\"value\":%s", dataStr);
-			if (broker_objs[obj_no]->isVerbose()) {
-				out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"units\":\"%s\"", broker_objs[obj_no]->getUnit());
-				// Only report min and max if they exist
-				double min_d = broker_objs[obj_no]->getMin();
-				double max_d = broker_objs[obj_no]->getMax();
-				if (min_d == min_d) out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"min\":\"%f\"", min_d);
-				if (max_d == max_d) out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"max\":\"%f\"", max_d);
-				out_buffer_idx += sprintf(out_buffer + out_buffer_idx, ",\"sample_time\":\"%s\"", broker_objs[obj_no]->getSplTimeStr());
-			}
-			out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "}"); // Close out this parameter
-		}
-	}
-	out_buffer_idx = addMsgTime(out_buffer, out_buffer_idx, ::TZ);
-	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "}"); // Close out params and message
-	if (S1DEBUG) {
-		Serial1.println(out_buffer);
-	}
-	Serial.println(out_buffer);
-	//printFreeRam("pSub end");
 }
