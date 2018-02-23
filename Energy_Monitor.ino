@@ -45,7 +45,7 @@ TO DO
 //#include <RingBuffer.h>
 
 #define S1DEBUG 1
-#define EM_VERSION 0.74
+#define EM_VERSION 0.76
 
 
 
@@ -57,6 +57,7 @@ TO DO
 #define V_DIV_HIGH  19100.0
 #define BROKER_MIN_UPDATE_RATE_MS 2000
 #define MAIN_BUFFER_SIZE 1500
+#define TOKEN_OWN_SIZE 40
 
 
 #include "broker_util.h"
@@ -104,12 +105,13 @@ bool data_map[BROKERDATA_OBJECTS]; // Used to mark broker objects we are interes
 char broker_start_time[] = "20000101120000"; // Holds start time
 char in_buffer[MAIN_BUFFER_SIZE]; // Holds incoming data
 uint16_t	in_buffer_idx = 0;
+char token_owner[TOKEN_OWN_SIZE]; // Holds current Token owner
 
 // Constants
 const char ON_NEW[] = "on_new";
 const char ON_CHANGE[] = "on_change";
 
-const uint8_t JSON_REQUEST_COUNT = 8; // How many different request types are there.
+const uint8_t JSON_REQUEST_COUNT = 12; // How many different request types are there.
 enum json_r_t {
 	BROKER_STATUS = 0,
 	BROKER_SUBSCRIBE = 1,
@@ -118,9 +120,13 @@ enum json_r_t {
 	BROKER_LIST_DATA = 4,
 	BROKER_RESET = 5,
 	BROKER_B_STATUS = 6,
-	BROKER_ERROR = 7
+	BROKER_TOK_ACQ = 7,
+	BROKER_TOK_FACK = 8,
+	BROKER_TOK_REL = 9,
+	BROKER_TOK_OWN = 10,
+	BROKER_ERROR = 11
 };
-const char *REQUEST_STRINGS[JSON_REQUEST_COUNT] = { "status","subscribe","unsubscribe","set","list_data","reset","broker_status","" };
+const char *REQUEST_STRINGS[JSON_REQUEST_COUNT] = { "status","subscribe","unsubscribe","set","list_data","reset","broker_status","tokenAcquire","tokenForceAcquire","tokenRelease","tokenOwner",""};
 
 #ifdef __cplusplus
 extern "C" {
@@ -236,7 +242,6 @@ void loop()
 	delay(LOOP_DELAY_TIME_MS); // MAY BE WORTH LOOKING IN TO LOWERING POWER CONSUMPTION HERE
 }
 
-
 void processSubscriptions(const bool datamap[], BrokerData *broker_objs[], const uint8_t broker_obj_count) {
 	/* Based on settings in data_map, generates a subscrition message
 	Currently uses aJson to generate message, but this may be un-necessary
@@ -277,7 +282,6 @@ void processSubscriptions(const bool datamap[], BrokerData *broker_objs[], const
 	}
 	//printFreeRam("pSub end");
 }
-
 
 bool processInput(char in_buffer[], uint16_t &in_buffer_idx, int16_t &b_count) {
 	/* Adds characters to in_buffer, increments in_buffer_idx, and keeps track of curly brackets
@@ -377,6 +381,20 @@ void processJson(aJsonObject *serial_msg) {
 			case (BROKER_B_STATUS):
 				processBrokerStatus();
 				break;
+			case (BROKER_TOK_ACQ):
+				processBrokerTokenAck(serial_msg,false);
+				break;
+			case (BROKER_TOK_FACK):
+				processBrokerTokenAck(serial_msg,true);
+				break;
+			case (BROKER_TOK_REL):
+				processBrokerTokenRel();
+				break;
+			case (BROKER_TOK_OWN):
+				processBrokerTokenOwn();
+				break;
+
+
 			default:
 				// NEED TO GENERATE AN ERROR HERE
 				if (S1DEBUG) {
@@ -683,7 +701,7 @@ uint8_t processSet(aJsonObject *json_in_msg) {
 				if (S1DEBUG) {
 					Serial1.print("Setting ");
 					Serial1.print(::brokerobjs[broker_data_idx]->getName());
-					Serial1.print("to ");
+					Serial1.print(" to ");
 					Serial1.println(setValue);
 				}
 				if (success) {
@@ -891,6 +909,52 @@ void generateStatusMessage() {
 		Serial1.println(out_buffer);
 	}
 }
+
+void processBrokerTokenAck(aJsonObject *json_in_msg,bool force) {
+	/* This is currently the simplest implementation. Ignores Force.
+	Should compare name to current value and deny of they don't match, but due to the nature of this "broker" there can only be one connection at a time.
+	*/
+	char out_buffer[MAIN_BUFFER_SIZE]; // Holds outgoing data
+	uint16_t out_buffer_idx = 0;
+	aJsonObject *jsonrpc_params = aJson.getObjectItem(json_in_msg, "params");
+	aJsonObject *jsonrpc_name = aJson.getObjectItem(jsonrpc_params, "name");
+	Serial1.println(jsonrpc_name->valuestring);
+	strncpy(token_owner, jsonrpc_name->valuestring, TOKEN_OWN_SIZE);
+	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "{\"result\":\"ok\",\"id\":%u}", ::json_id);
+	Serial.println(out_buffer);
+	if (S1DEBUG) {
+		Serial1.print(out_buffer_idx);
+		Serial1.print(" - ");
+		Serial1.println(out_buffer);
+	}
+}
+
+void processBrokerTokenRel() {
+	char out_buffer[MAIN_BUFFER_SIZE]; // Holds outgoing data
+	uint16_t out_buffer_idx = 0;
+	token_owner[0] = 0; // clears owner
+	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "{\"result\":\"ok\",\"id\":%u}", ::json_id);
+	Serial.println(out_buffer);
+	if (S1DEBUG) {
+		Serial1.print(out_buffer_idx);
+		Serial1.print(" - ");
+		Serial1.println(out_buffer);
+	}
+}
+
+void processBrokerTokenOwn() {
+	char out_buffer[MAIN_BUFFER_SIZE]; // Holds outgoing data
+	uint16_t out_buffer_idx = 0;
+	out_buffer_idx += sprintf(out_buffer + out_buffer_idx, "{\"result\":\"%s\",\"id\":%u}", token_owner,::json_id);
+	Serial.println(out_buffer);
+	if (S1DEBUG) {
+		Serial1.print(out_buffer_idx);
+		Serial1.print(" - ");
+		Serial1.println(out_buffer);
+	}
+}
+
+
 
 void clearDataMap() {
 	for (uint8_t i = 0; i < BROKERDATA_OBJECTS; i++) {

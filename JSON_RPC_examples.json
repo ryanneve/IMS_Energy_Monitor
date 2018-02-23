@@ -54,6 +54,14 @@ Example JSON requests:
 
 {"method" : "broker_status", "id" : 1003}
 
+{"method" : "tokenAcquire", "params":{"name":"avp_console.PowerMonConsole"},"id" : 1103}
+
+{"method" : "tokenForceAcquire", "params":{"name":"avp_console.PowerMonConsole"},"id" : 1105}
+
+{"method" : "tokenRelease", "id" : 1104}
+
+{"method" : "tokenOwner", "id" : 1106}
+
 {"result":
 	{"suspended":False,
 	"power_on":True,

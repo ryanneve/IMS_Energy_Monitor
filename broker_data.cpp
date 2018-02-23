@@ -142,6 +142,7 @@ bool TimeData::setData(double date_or_time) {
 	}
 	setTime(Hrs, mins, secs, DD, MM, ccyy); // Sets software clock
 	Teensy3Clock.set(now()); // Sets RTC to software clock.
+	setSampleTimeStr(_last_sample_time_str);
 	 /*
 	 if (S1DEBUG) {
 		Serial1.print("input: "); Serial1.println(_data_value);
